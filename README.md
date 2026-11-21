@@ -16,3 +16,13 @@ Pages: index, about, policy, terms, book-online, service, booking, shop,
 5 product pages, members, blog + 3 posts. Images are hotlinked from their
 public static.wixstatic.com URLs (verified HTTP 200 on 2026-11-21); no images
 are inlined, so files stay small for GitHub push.
+
+Service images (2026-11-21): the six files in assets/service/ are
+service-scope photos found online (vacuum / hair dryer / air purifier /
+battery / water damage / deep cleaning). They are used ONLY as CSS
+background-image behind the service bands, hero and why-us section
+(with a pale blue overlay), never as foreground <img> tags, and never
+on shop/product pages (those keep the Dyson product photos). Note:
+assets/service/* are binary files, so they cannot be pushed with the
+GitHub connector's text-only snapshot tool — upload them via the
+GitHub web UI like the NV logo was.
