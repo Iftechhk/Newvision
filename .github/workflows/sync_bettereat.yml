@@ -2,6 +2,8 @@ name: Sync BETTEREAT sold data
 on:
   schedule:
     - cron: "30 14 * * *"
+    - cron: "35 14 * * *"
+    - cron: "45 14 * * *"
   workflow_dispatch:
   repository_dispatch:
     types: [sync_bettereat]
