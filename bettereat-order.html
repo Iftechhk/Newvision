@@ -1317,7 +1317,7 @@ function syncSalesToFeishu(rows, statusEl, status, orderDiscount, extraLines){
     if (done) return; done = true;
     if (statusEl) {
       // 樂觀提交嗰句「（飛書同步緊…）」／重試嗰句已經過時，同步有結果就換走佢。
-      try { var _t = String(statusEl.textContent || ""); _t = _t.replace("（飛書同步緊…）", "").replace("（同步失敗，10 秒後自動再試…）", ""); statusEl.textContent = _t; } catch (e) {}
+      try { var _t = String(statusEl.textContent || ""); _t = _t.replace("（飛書同步緊…）", "").replace("（同步失敗，30 秒後自動再試…）", ""); statusEl.textContent = _t; } catch (e) {}
       statusEl.textContent += msg;
     }
   }
@@ -1325,7 +1325,7 @@ function syncSalesToFeishu(rows, statusEl, status, orderDiscount, extraLines){
   // 全部被濾走，lines 係空就靜靜哋 return，飛書永遠收唔到新單。宜家格式唔啱會出提示，唔再無聲漏單。
   if (!lines.length) { finish("未能同步去飛書（記錄資料不完整），記錄已存喺呢部裝置，之後去訂單記錄頁撳「重新同步」。"); return; }
   // 2026-11-27 自動重試：飛書寫入而家可達 16 秒，舊 20 秒 timeout 好易 cut 線。
-  // 失敗嗰陣 10 秒後自動再試，最多 3 次（提交本身冪等，重試唔會開多重複行）；
+  // 失敗嗰陣 30 秒後自動再試，最多 3 次（提交本身冪等＋Worker 單號鎖，重試唔會開多重複行）；
   // stock_below_cap 係業務拒絕，唔重試。
   var ctrl = null, timer = null, tries = 0;
   function attempt(){
@@ -1358,15 +1358,15 @@ function syncSalesToFeishu(rows, statusEl, status, orderDiscount, extraLines){
     }
     else if (j && j.error === "stock_below_cap") finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置。");
     else if (tries < 3) {
-      if (statusEl) { try { statusEl.textContent = String(statusEl.textContent || "").replace("（飛書同步緊…）", "（同步失敗，10 秒後自動再試…）"); } catch (e) {} }
-      setTimeout(attempt, 10000);
+      if (statusEl) { try { statusEl.textContent = String(statusEl.textContent || "").replace("（飛書同步緊…）", "（同步失敗，30 秒後自動再試…）"); } catch (e) {} }
+      setTimeout(attempt, 30000);
     }
     else finish("未能同步去飛書（記錄已存喺呢部裝置），稍後可再提交。");
   }).catch(function(){
     if (timer) clearTimeout(timer);
     if (tries < 3) {
-      if (statusEl) { try { statusEl.textContent = String(statusEl.textContent || "").replace("（飛書同步緊…）", "（同步失敗，10 秒後自動再試…）"); } catch (e) {} }
-      setTimeout(attempt, 10000);
+      if (statusEl) { try { statusEl.textContent = String(statusEl.textContent || "").replace("（飛書同步緊…）", "（同步失敗，30 秒後自動再試…）"); } catch (e) {} }
+      setTimeout(attempt, 30000);
     }
     else finish("未能同步去飛書（記錄已存喺呢部裝置），稍後可再提交。");
   });
