@@ -1200,7 +1200,7 @@ function normStatus(s){ return (s === "待確認" || s === "已確認" || s === 
 function recordToLine(r){
   if (!r) return null;
   var rt = splitRecordTime(r.time);
-  if (!r.order || !/^B([A-Z]{3})?\d{8}-\d{3}$/.test(r.order)) return null;
+  if (!r.order || !/^B([A-Z]{3,4})?\d{8}-\d{3}$/.test(r.order)) return null;
   if (!rt.date || rt.date === "—" || !/^\d{4}-\d{2}-\d{2}$/.test(rt.date)) return null;
   var q = parseInt(r.qty, 10);
   var p = parseFloat(r.price), s = parseFloat(r.subtotal);

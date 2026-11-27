@@ -631,7 +631,7 @@ function recordToLine(r){
   var rt = splitRecordTime(r.time);
   // ⚠️ 2026-11-17 修正：舊版只接受舊格式 B20261106-002，新格式 BMJF20261106-002 會返 null，
   // 令提交／編輯同步靜靜哋漏單。宜家同 Worker 一樣，兩種格式都接受。
-  if (!r.order || !/^B([A-Z]{3})?\d{8}-\d{3}$/.test(r.order)) return null;
+  if (!r.order || !/^B([A-Z]{3,4})?\d{8}-\d{3}$/.test(r.order)) return null;
   if (!rt.date || rt.date === "—" || !/^\d{4}-\d{2}-\d{2}$/.test(rt.date)) return null;
   var q = parseInt(r.qty, 10);
   var p = parseFloat(r.price), s = parseFloat(r.subtotal);
