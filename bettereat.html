@@ -327,7 +327,9 @@
 </div>
 
 <script>
-// ===== BETTEREAT 統一系統（bettereat.html）=====
+// ===== BETTEREAT 統一系統 v2（平台重建 Phase 2B，DESIGN.md §2.5）=====
+// 數據層由頭寫過：飛書係真相、本地只係快取；讀數失敗唔會用舊數扮新數。
+// 版面／流程／字眼／按鈕跟足 v1，門店唔使重新學。
 // 一個入口，五個分頁：落單 / 報表 / 訂單記錄 / 按產品檢視 / 庫存（2026-11-18 P0 新增；庫存分頁門店同管理員都見到，頁內再按角色分權）。
 // 落單、訂單記錄、按產品檢視係 iframe（原頁面邏輯完全唔郁，獨立開嗰啲連結照舊用得）；報表係舊主頁嘅 Dashboard，inline 喺呢頁。
 // 登入統一喺呢頁做：揀身份（4 間店或管理員）+ 密碼。
@@ -339,12 +341,23 @@ var ADMIN_PASSWORD = "admin1234";
 var SHOP_PASSWORDS = { "MJF": "MJF123", "MAP": "MAP123", "MKH": "MKH123", "MMCP": "MMCP123" };
 var SHOP_LABELS = ["謝斐 (MJF)", "淘大 (MAP)", "Aeon (MKH)", "將軍澳 (MMCP)"];
 var SHOP_CODES = { "謝斐 (MJF)": "MJF", "淘大 (MAP)": "MAP", "Aeon (MKH)": "MKH", "將軍澳 (MMCP)": "MMCP" };
-var SALES_WORKER_URL = "https://bettereat-sales-proxy.yan-lam.workers.dev";
+// 寫入 v2 Worker 嘅 URL 得呢一個常數：切換嗰陣改呢度就得（之後搬去 it@ 戶口嗰陣改呢行）。
+// v2 Worker 名 bettereat-sales-v2（Phase 1 未部署，舊 bettereat-sales-proxy 繼續 live）。
+var V2_WORKER_URL = "https://bettereat-sales-proxy.yan-lam.workers.dev";
 var LOGIN_KEY = "bettereat_order_login";
 var FORM_A_URL = "https://fcnnkklc0uhr.feishu.cn/share/base/form/shrcnySrPjIwg3IiovaafcoOfgc";
-var DATA_URL = "https://www.newvision-tech.com.hk/bettereat_sold_data.json";
-var PRODUCTS_URL = "https://www.newvision-tech.com.hk/bettereat_products.json";
+// 2026-11-27 同步搬入 Worker：數據主讀 Worker KV（每晚 22:30 Cron 同步），讀唔到跌返站內 JSON（GitHub 排程後備）
+var DATA_SITE_URL = "https://www.newvision-tech.com.hk/bettereat_sold_data.json";
+var PRODUCTS_SITE_URL = "https://www.newvision-tech.com.hk/bettereat_products.json";
+var DATA_URL = V2_WORKER_URL + "/data/sold";
+var PRODUCTS_URL = V2_WORKER_URL + "/data/products";
+function fetchJsonWithFallback(workerUrl, siteUrl){
+  return fetch(workerUrl + "?t=" + Date.now()).then(function(r){ if (!r.ok) throw new Error("http " + r.status); return r.json(); }).catch(function(){
+    return fetch(siteUrl + "?t=" + Date.now()).then(function(r){ return r.json(); });
+  });
+}
 var allRecords = [], curStore = "ALL", payload = null, curDate = "";
+var lastGoodAt = ""; // 上次成功讀取數據嘅 generated_at（讀數失敗嗰陣用嚟標明舊數據）
 var productsByCode = {}; // product_code -> { price, cost, category, subcategory, name }（T1 產品主檔；讀唔到就留空，單價／毛利顯示 —／待填成本）
 var priceByName = {}; // 產品名（T1 全名）-> 標準價（優惠贈品零售價值用）
 var salesList = null; // Worker list：網上訂單銷售紀錄（優惠成本＋平均單價用）
@@ -386,7 +399,7 @@ function verifyPwRemote(role, label, pw, timeoutMs){
     var opts = { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "verify", role: role, shop: label, password: pw }) };
     if (ctrl) opts.signal = ctrl.signal;
-    fetch(SALES_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
+    fetch(V2_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
       if (done) return; done = true; clearTimeout(timer);
       if (j && j.ok) resolve("ok");
       else if (j && j.error === "wrong_password") resolve("wrong");
@@ -502,9 +515,10 @@ function setupActions(){
 function loadData(){
   fetchWorkerExtra(); // 優惠成本＋庫存價值：另外讀 Worker，失敗唔拖垮主數據
   // 產品主檔另外抓：失敗（離線／未發佈）唔可以拖垮銷售數據，只係單價／毛利顯示 —／待填成本
-  var productsP = fetch(PRODUCTS_URL + "?t=" + Date.now()).then(function(r){ return r.json(); }).catch(function(){ return null; });
-  fetch(DATA_URL + "?t=" + Date.now()).then(function(r){ return r.json(); }).then(function(j){
+  var productsP = fetchJsonWithFallback(PRODUCTS_URL, PRODUCTS_SITE_URL).catch(function(){ return null; });
+  fetchJsonWithFallback(DATA_URL, DATA_SITE_URL).then(function(j){
     payload = j;
+    lastGoodAt = j.generated_at || "";
     if (!payload.history) { payload.history = {}; payload.history[j.date] = j.records || []; }
     var dates = Object.keys(payload.history).sort().reverse();
     var sel = document.getElementById("dateSel");
@@ -537,7 +551,13 @@ function loadData(){
     }
     applyDate();
   }).catch(function(){
-    document.getElementById("metaLine").textContent = "暫時讀取唔到數據，請稍後重新整理。";
+    if (payload) {
+      // 之前讀到過，今次失敗：舊數留喺畫面，但一定要話明係舊數，唔可以扮新數
+      document.getElementById("metaLine").textContent =
+        "數據未能更新，顯示舊數據（上次成功讀取，更新時間：" + (lastGoodAt || "—") + "），請稍後重新整理。";
+    } else {
+      document.getElementById("metaLine").textContent = "暫時讀取唔到數據，請稍後重新整理。";
+    }
   });
 }
 // ===== 單價／成本／毛利（P0 第 1、2 項）=====
@@ -1038,6 +1058,13 @@ function renderPromo(){
   var sc = promoScope();
   var sp = document.getElementById("statPromo");
   var sa = document.getElementById("statATV");
+  if (salesList === "NOT_OPENED") {
+    if (sum) sum.textContent = "網上訂單功能喺新系統未開通（重建中），優惠成本同平均單價暫時未有。";
+    if (wrap) wrap.innerHTML = "";
+    if (sp) sp.textContent = "—";
+    if (sa) sa.textContent = "—";
+    return;
+  }
   if (salesList === "FAILED") {
     if (sum) sum.textContent = "讀取唔到網上訂單數據（Worker 連唔到），優惠成本同平均單價暫時未有。";
     if (wrap) wrap.innerHTML = "";
@@ -1299,7 +1326,7 @@ function postWorker(action){
   var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
   var timer = null;
   if (ctrl) timer = setTimeout(function(){ ctrl.abort(); }, 10000);
-  return fetch(SALES_WORKER_URL, {
+  return fetch(V2_WORKER_URL, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: action }),
     signal: ctrl ? ctrl.signal : undefined
@@ -1308,7 +1335,9 @@ function postWorker(action){
 }
 function fetchWorkerExtra(){
   postWorker("list").then(function(j){
-    if (j && j.ok && j.records) { salesList = j; } else { salesList = "FAILED"; }
+    if (j && j.ok && j.records) { salesList = j; }
+    else if (j && j.error === "not_implemented_in_v2_phase1") { salesList = "NOT_OPENED"; }
+    else { salesList = "FAILED"; }
     renderPromo();
   });
 }

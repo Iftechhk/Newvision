@@ -258,8 +258,23 @@
 </div>
 
 <script>
-var DATA_URL = "https://www.newvision-tech.com.hk/bettereat_sold_data.json";
-var PRODUCTS_URL = "https://www.newvision-tech.com.hk/bettereat_products.json";
+// ===== BETTEREAT 訂購 v2（平台重建 Phase 2，DESIGN.md §2.1／§2.4／§2.5）=====
+// 數據層由頭寫過：單一提交入口 submitOrder、伺服器派號（唔預取）、
+// localStorage 只係 outbox（飛書係真相）、重試前先查 GET /order/{orderNo}。
+// 版面／流程／字眼／按鈕跟足 v1，門店唔使重新學。
+//
+// 寫入 v2 Worker 嘅 URL 得呢一個常數：切換嗰陣改呢度就得。
+// v2 Worker 名 bettereat-sales-v2（Phase 1 未部署，舊 bettereat-sales-proxy 繼續 live）。
+var V2_WORKER_URL = "https://bettereat-sales-proxy.yan-lam.workers.dev";
+var DATA_SITE_URL = "https://www.newvision-tech.com.hk/bettereat_sold_data.json";
+var PRODUCTS_SITE_URL = "https://www.newvision-tech.com.hk/bettereat_products.json";
+var DATA_URL = V2_WORKER_URL + "/data/sold";
+var PRODUCTS_URL = V2_WORKER_URL + "/data/products";
+function fetchJsonWithFallback(workerUrl, siteUrl){
+  return fetch(workerUrl + "?t=" + Date.now()).then(function(r){ if (!r.ok) throw new Error("http " + r.status); return r.json(); }).catch(function(){
+    return fetch(siteUrl + "?t=" + Date.now()).then(function(r){ return r.json(); });
+  });
+}
 var products = [], cart = {}, searchText = "";
 
 // ===== 門店登入密碼（改密碼：喺呢度改，改完 commit，1–2 分鐘後生效；店員要重新載入頁面） =====
@@ -270,8 +285,8 @@ var LOGIN_KEY = "bettereat_order_login";
 
 function esc(s){ return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 function loadData(){
-  var soldP = fetch(DATA_URL + "?t=" + Date.now()).then(function(r){ return r.json(); });
-  var prodP = fetch(PRODUCTS_URL + "?t=" + Date.now()).then(function(r){ return r.json(); }).catch(function(){ return null; });
+  var soldP = fetchJsonWithFallback(DATA_URL, DATA_SITE_URL);
+  var prodP = fetchJsonWithFallback(PRODUCTS_URL, PRODUCTS_SITE_URL).catch(function(){ return null; });
   return Promise.all([soldP, prodP]).then(function(res){
     var j = res[0], pj = res[1];
     var recs = j.records || [];
@@ -455,61 +470,12 @@ function scrollToCart(){
 }
 var RECORDS_KEY = "bettereat_order_records";
 var RECORDS_SHOP_KEY = "bettereat_records_shop";
-var ORDER_SEQ_KEY = "bettereat_order_seq";
-// 純掃描：呢間店今日喺本地記錄入面用過嘅最大序號（唔計 ORDER_SEQ_KEY 計數器，唔改任何嘢）。
-// 計數器會預先寫入 Worker 派咗但未用嘅號（預取嗰陣寫），所以判斷 Worker 號可唔可以用嗰陣
-// 只可以睇真正用咗嘅記錄，唔可以睇計數器——否則 Worker 啱啱派嘅 -005 會被自己個計數器擋住。
-function localMaxRecordSeq(shop, ymd){
-  var code = (shop && SHOP_CODES[shop]) ? SHOP_CODES[shop] : "";
-  var max = 0;
-  try {
-    var recs = loadRecords();
-    for (var i = 0; i < recs.length; i++) {
-      var m = String(recs[i].order || "").match(/^B([A-Z]{3,4})(\d{8})-(\d{3})$/);
-      if (m && m[1] === code && m[2] === ymd) { var s = parseInt(m[3], 10); if (s > max) max = s; }
-    }
-  } catch (e) {}
-  return max;
-}
-// 純掃描：呢間店今日用過嘅最大序號（計數器＋本地記錄兩邊取大；唔改任何嘢）。
-function localMaxOrderSeq(shop, ymd){
-  var code = (shop && SHOP_CODES[shop]) ? SHOP_CODES[shop] : "";
-  var max = 0;
-  try {
-    var raw = localStorage.getItem(ORDER_SEQ_KEY);
-    var obj = raw ? JSON.parse(raw) : null;
-    if (obj && obj.date === ymd && obj.shop === code && obj.seq) max = obj.seq;
-  } catch (e) {}
-  var rs = localMaxRecordSeq(shop, ymd);
-  if (rs > max) max = rs;
-  return max;
-}
-function nextOrderNo(){
-  var d = new Date();
-  var ymd = d.getFullYear() + ("0" + (d.getMonth() + 1)).slice(-2) + ("0" + d.getDate()).slice(-2);
-  // 訂單編號跟店名＋日期出：B + 店代碼 + 日期 + 序號（例如 BMJF20261106-002）。
-  // 序號按店＋日期獨立計，唔同店唔會再撞號（舊格式 B20261106-002 係全店共用序號，
-  // 每部裝置各自計，撞號先搞到飛書改價會掂埋其他店嗰行）。舊格式嘅記錄照舊可以編輯／刪除。
-  // 2026-11-17 起，提交嗰陣優先由 Worker 派號（requestWorkerOrderNo，以飛書做準，唔同裝置唔會再撞號）；
-  // 呢個本機 nextOrderNo() 只係 Worker 唔得嗰陣嘅後備，同一日同一間店用多部裝置仍有可能撞號。
-  // 雙向派號（2026-11-27）：本地未同步行可能已經用咗更大嘅序號，唔可以只睇計數器；
-  // 取計數器同本地記錄兩邊最大嗰個 +1，唔好再重用已用過嘅號。
-  var shop = getRecordsShop();
-  var code = (shop && SHOP_CODES[shop]) ? SHOP_CODES[shop] : "";
-  var seq = localMaxOrderSeq(shop, ymd) + 1;
-  try {
-    localStorage.setItem(ORDER_SEQ_KEY, JSON.stringify({ date: ymd, shop: code, seq: seq }));
-  } catch (e) {}
-  return "B" + code + ymd + "-" + ("00" + seq).slice(-3);
-}
 function getRecordsShop(){
   try { return localStorage.getItem(RECORDS_SHOP_KEY) || ""; } catch (e) { return ""; }
 }
 function setRecordsShop(v){
   try { localStorage.setItem(RECORDS_SHOP_KEY, v); } catch (e) {}
-  // 轉店：預取嗰個號係舊店嘅，作廢再為新店預取。
-  prefetchedOrderNo = null;
-  prefetchWorkerOrderNo();
+  // v2：唔再預取單號（DESIGN.md §2.4），轉店唔使做任何派號嘢。
   fetchStoreStock(); // 轉店即刻問新店庫存（背景，5 分鐘內唔重問）
 }
 function applyRecordsShopFromUrl(){
@@ -573,7 +539,7 @@ function verifyPwRemote(role, label, pw, timeoutMs){
     var opts = { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "verify", role: role, shop: label, password: pw }) };
     if (ctrl) opts.signal = ctrl.signal;
-    fetch(SALES_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
+    fetch(V2_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
       if (done) return; done = true; clearTimeout(timer);
       if (j && j.ok) resolve("ok");
       else if (j && j.error === "wrong_password") resolve("wrong");
@@ -672,7 +638,7 @@ function unlockPage(){
     }
   } catch (e) {}
   if (verifyLines) renderVerify();
-  prefetchWorkerOrderNo(); // 入頁即刻喺背景預取下一個單號，提交嗰陣唔使等
+  // v2：入頁唔再喺背景預取單號（DESIGN.md §2.4）——單號撳「確認提交」嗰陣先由 Worker 派。
 }
 function showLogin(){
   var loginEl = document.getElementById("loginScreen");
@@ -684,8 +650,6 @@ function showLogin(){
 }
 function logout(){
   try { localStorage.removeItem(LOGIN_KEY); } catch (e) {}
-  prefetchedOrderNo = null;
-  try { if (prefetchOrderNoTimer) { clearTimeout(prefetchOrderNoTimer); prefetchOrderNoTimer = null; } } catch (e) {}
   cart = {};
   loginShopChoice = "";
   var pwEl = document.getElementById("loginPw");
@@ -757,7 +721,7 @@ function submitChangePw(){
   var opts = { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: "change", role: role, shop: label, oldPassword: oldPw, newPassword: np }) };
   if (ctrl) opts.signal = ctrl.signal;
-  fetch(SALES_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
+  fetch(V2_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
     if (timer) clearTimeout(timer);
     if (j && j.ok) {
       try { sessionStorage.setItem("bettereat_pw_just_changed", np); } catch (e) {}
@@ -996,7 +960,7 @@ function fetchPromoRules(){
   var opts = { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: "promoList" }) };
   if (ctrl) opts.signal = ctrl.signal;
-  return fetch(SALES_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
+  return fetch(V2_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
     if (timer) clearTimeout(timer);
     if (j && j.ok === true && Array.isArray(j.records)) {
       promoRules = j.records.map(normalizePromoRule).filter(function(r){ return !!r; });
@@ -1181,7 +1145,7 @@ function prefetchStockAllow(){
   if (!lines.length) return;
   prefetchAllowInFlight = true;
   var store = getRecordsShop();
-  fetch(SALES_WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "stockAllow", store: store, lines: lines }) })
+  fetch(V2_WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "stockAllow", store: store, lines: lines }) })
     .then(function(res){ return res.json(); })
     .then(function(j){
       prefetchAllowInFlight = false;
@@ -1208,7 +1172,7 @@ function fetchStoreStock(force){
   var lines = products.map(function(p){ return { product: p.name, productCode: p.code, qty: 1 }; });
   if (!lines.length) return;
   stockInFlight = true;
-  fetch(SALES_WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "stockAllow", store: store, lines: lines }) })
+  fetch(V2_WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "stockAllow", store: store, lines: lines }) })
     .then(function(res){ return res.json(); })
     .then(function(j){
       stockInFlight = false;
@@ -1236,79 +1200,14 @@ function cartMatchesVerify(){
   items.forEach(function(it){ map[it.code] = it.qty; });
   return verifyOrig.every(function(o){ return map[o.code] === o.qty; });
 }
-var SALES_WORKER_URL = "https://bettereat-sales-proxy.yan-lam.workers.dev";
-// Worker 派單號：提交嗰陣問 Worker 攞下一個單號（以飛書已同步嘅單做準，唔同裝置唔會再撞號）。
-// 成功返訂單編號字串；失敗／逾時（8 秒）／回覆唔啱格式就返 null，提交會跌返去用本機 nextOrderNo()。
-function requestWorkerOrderNo(store){
-  return new Promise(function(resolve){
-    var done = false;
-    function finish(v){ if (done) return; done = true; resolve(v); }
-    var ctrl = null, timer = null;
-    try {
-      ctrl = new AbortController();
-      timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} finish(null); }, 30000);
-    } catch (e) { ctrl = null; }
-    var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "nextOrderNo", store: store }) };
-    if (ctrl) opts.signal = ctrl.signal;
-    fetch(SALES_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
-      if (timer) clearTimeout(timer);
-      var code = (store && SHOP_CODES[store]) ? SHOP_CODES[store] : "";
-      if (j && j.ok && typeof j.order === "string" && new RegExp("^B" + code + "\\d{8}-\\d{3}$").test(j.order)) {
-        // Worker 派咗嘅號寫返入本機計數器，等之後萬一 Worker 唔得、跌返本機派號嗰陣唔會倒退重用舊號。
-        // 雙向派號：計數器只可以向前，唔可以倒退（例如本地已用 -005，Worker 仲派 -004 嗰陣唔可以寫返 4）。
-        try {
-          var seq = parseInt(j.order.slice(-3), 10);
-          var ymd = (typeof j.date === "string" && /^\d{8}$/.test(j.date)) ? j.date : j.order.slice(4, 12);
-          if (seq >= 1) {
-            var cur = null;
-            try { cur = JSON.parse(localStorage.getItem(ORDER_SEQ_KEY) || "null"); } catch (e2) {}
-            if (!cur || cur.date !== ymd || cur.shop !== code || seq > cur.seq) localStorage.setItem(ORDER_SEQ_KEY, JSON.stringify({ date: ymd, shop: code, seq: seq }));
-          }
-        } catch (e) {}
-        finish(j.order);
-      } else finish(null);
-    }).catch(function(){
-      if (timer) clearTimeout(timer);
-      finish(null);
-    });
-  });
-}
-// 樂觀提交（2026-11-27）：預先喺背景問 Worker 攞下一個單號，等撳確認提交嗰陣即刻有號用，唔使企喺度等 4–5 秒。
-// 號係按門店派（B＋店代碼＋日期＋序號），唔同店唔會撞；同一間店兩部機同時用同一個預取號嘅機會好細
-// （預取每 45 秒刷新一次，提交後即刻再預取下一個），萬一撞咗，Worker 嘅冪等提交會將唔同產品行併入同一個單號——
-// 要完全避免就要 Worker 預留號碼，現階段先用預取。
-var prefetchedOrderNo = null;
-var prefetchOrderNoInFlight = false;
-var prefetchOrderNoTimer = null;
-function schedulePrefetch(ms){
-  try { if (prefetchOrderNoTimer) clearTimeout(prefetchOrderNoTimer); } catch (e) {}
-  prefetchOrderNoTimer = setTimeout(function(){
-    prefetchOrderNoTimer = null;
-    if (getLoginSession()) prefetchWorkerOrderNo();
-  }, ms);
-}
-function prefetchWorkerOrderNo(){
-  if (prefetchOrderNoInFlight) return;
-  var store = getRecordsShop();
-  if (!store) return;
-  prefetchOrderNoInFlight = true;
-  requestWorkerOrderNo(store).then(function(no){
-    prefetchOrderNoInFlight = false;
-    if (no) {
-      prefetchedOrderNo = no;
-      schedulePrefetch(45000); // 有號：45 秒後再刷新，縮短同一號被兩部機重用嘅窗口
-    } else {
-      schedulePrefetch(30000); // 攞唔到：30 秒後再試
-    }
-  });
-}
 // 訂單狀態歸一：只認「待確認」／「已確認」／「已取消」，其他／冇就預設「已確認」（向後兼容）。
 function normStatus(s){ return (s === "待確認" || s === "已確認" || s === "已取消" || s === "待PROCESS") ? s : "已確認"; }
 // 一行本地記錄轉做 Worker 收嘅 line 格式；唔合規格返 null（提交／編輯同步共用）
 function recordToLine(r){
   if (!r) return null;
   var rt = splitRecordTime(r.time);
-  if (!r.order || !/^B([A-Z]{3,4})?\d{8}-\d{3}$/.test(r.order)) return null;
+  // v2：未派號嘅本地行 order 係空字串（Worker 派號嗰陣會填返）；有號嗰陣格式要啱。
+  if (r.order && !/^B([A-Z]{3,4})?\d{8}-\d{3}$/.test(r.order)) return null;
   if (!rt.date || rt.date === "—" || !/^\d{4}-\d{2}-\d{2}$/.test(rt.date)) return null;
   var q = parseInt(r.qty, 10);
   var p = parseFloat(r.price), s = parseFloat(r.subtotal);
@@ -1338,11 +1237,62 @@ function recordToLine(r){
     promoType: (r.promoType ? String(r.promoType).slice(0, 100) : "")
   };
 }
-// 確認提交嗰下，將呢張單嘅行即刻 POST 去 Cloudflare Worker，寫入飛書「銷售紀錄」表。
-// localStorage 記錄一定先存好，同步失敗唔會影響本地記錄；Worker 未加 FEISHU_APP_SECRET 之前一定失敗（屬正常）。
-// orderDiscount（第四個參數）：成單滿減 {rule, amount}，Worker 會加一行「滿減優惠」（負金額，唔扣庫存）。
-// extraLines（第五個參數，可選）：成行免費嗰啲產品嘅 Worker line（實付 0 件，本地冇記錄行，
-// 直接用 Worker line 格式傳，唔經 recordToLine）。
+// ===== v2 提交（DESIGN.md §2.1／§2.4／§2.5）：單一提交入口 submitOrder =====
+// 撳「確認提交」嗰陣一次過 POST {action:"submit", lines, orderDiscount, clientRef}——
+// 唔帶 order，Worker 派號＋寫入一次過做；clientRef 係呢張本地單嘅穩定身份，
+// 同一張單重試用同一個 ref，response 唔見咗都唔會寫多張單。
+// 重試前先查：已知單號嗰陣先 GET /order/{orderNo}——done 就標同步唔再交；
+// in_progress 就等；never_seen 先交。未派號（唔知單號）嗰陣，重交本身就係查——
+// Worker 憑 clientRef 搵返同一個號，再憑 KV 冪等 key 決定寫唔寫。
+// stock_below_cap 係業務拒絕，唔重試；其餘失敗 30 秒後再試，最多 3 次。
+// SUBMIT_TIMEOUT_MS／SUBMIT_RETRY_MS 係常數，方便 harness 覆寫做快測（生產值 45 秒／30 秒）。
+var SUBMIT_TIMEOUT_MS = 45000;
+var SUBMIT_RETRY_MS = 30000;
+// GET /order/{orderNo}：查一張單嘅提交狀態（DESIGN.md §2.5）。
+// 回 {ok, order, status: "done"|"in_progress"|"never_seen", recordIds?, ...}；
+// 查唔到（網絡錯／KV 唔到回 503）就回 null——fail closed，頁面唔可以當 never_seen 亂交。
+function fetchOrderStatus(orderNo){
+  if (!orderNo) return Promise.resolve(null);
+  return fetch(V2_WORKER_URL + "/order/" + encodeURIComponent(orderNo), { method: "GET" })
+    .then(function(res){ return res.json(); })
+    .then(function(j){ return (j && j.ok) ? j : null; })
+    .catch(function(){ return null; });
+}
+// 將 Worker 回嘅單號＋recordIds 寫返入本地行（單號落實、每行掛 feishuId）。
+// recordIds 順序同 lines 一致（實付行）；按（clientRef＋產品＋數量＋狀態）精確配對，唔靠位置。
+function markLocalSynced(clientRef, lines, j){
+  if (!j || !j.order) return j.order || "";
+  var orderNo = j.order;
+  try {
+    var _arr = loadRecords();
+    if (Array.isArray(j.recordIds)) {
+      for (var k = 0; k < lines.length; k++) {
+        var id = j.recordIds[k];
+        if (!id) continue;
+        var ln = lines[k];
+        for (var m = 0; m < _arr.length; m++) {
+          var _r = _arr[m];
+          if (_r && !_r.feishuId && _r.clientRef === clientRef && _r.product === ln.product && _r.qty === ln.qty && normStatus(_r.status) === normStatus(ln.status)) { _r.feishuId = id; _r.order = orderNo; break; }
+        }
+      }
+    }
+    // 其餘同 ref 嘅行（例如成行免費嗰款本地冇行）：淨係補返個單號。
+    for (var m2 = 0; m2 < _arr.length; m2++) {
+      if (_arr[m2] && _arr[m2].clientRef === clientRef && !_arr[m2].order) _arr[m2].order = orderNo;
+    }
+    saveRecords(_arr);
+  } catch (e) {}
+  return orderNo;
+}
+// 將 #submitStatus 入面「訂單編號派緊…」換做落實咗嘅號（失敗嗰陣換做「訂單編號未派出」）。
+function updateSubmitStatusOrder(orderNo){
+  var st = document.getElementById("submitStatus");
+  if (!st) return;
+  try {
+    var t = String(st.textContent || "");
+    if (t.indexOf("訂單編號派緊…") >= 0) st.textContent = t.replace("訂單編號派緊…", orderNo ? ("訂單編號：" + orderNo) : "訂單編號未派出");
+  } catch (e) {}
+}
 function syncSalesToFeishu(rows, statusEl, status, orderDiscount, extraLines){
   if ((!rows || !rows.length) && (!extraLines || !extraLines.length)) return;
   // 邊種提交由第三個參數定，冇傳就跟第一行嘅狀態（再冇就預設已確認）。
@@ -1353,72 +1303,84 @@ function syncSalesToFeishu(rows, statusEl, status, orderDiscount, extraLines){
     if (line) lines.push(line);
   }
   (extraLines || []).forEach(function(l){ lines.push(l); });
+  // clientRef：呢張本地單嘅穩定身份——由第一行拎；舊本地行冇嘅話即場生一個（之後重試用返同一個變量，唔會每次 random）。
+  var clientRef = "";
+  var k;
+  for (k = 0; k < (rows || []).length; k++) { if (rows[k] && rows[k].clientRef) { clientRef = String(rows[k].clientRef); break; } }
+  if (!clientRef) clientRef = "v2-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
   var done = false;
+  var orderNoKnown = ""; // 邊次攞到號就記低，重試前先用佢查
   function finish(msg){
     if (done) return; done = true;
     if (statusEl) {
       // 樂觀提交嗰句「（飛書同步緊…）」／重試嗰句已經過時，同步有結果就換走佢。
-      try { var _t = String(statusEl.textContent || ""); _t = _t.replace("（飛書同步緊…）", "").replace("（同步失敗，30 秒後自動再試…）", ""); statusEl.textContent = _t; } catch (e) {}
+      try { var _t = String(statusEl.textContent || ""); _t = _t.replace("（飛書同步緊…）", "").replace("（同步失敗，30 秒後自動再試…）", "").replace("（同步進行緊，30 秒後自動再試…）", ""); statusEl.textContent = _t; } catch (e) {}
       statusEl.textContent += msg;
     }
+    if (!orderNoKnown) updateSubmitStatusOrder(null);
   }
   // ⚠️ 2026-11-17 修正：舊版 recordToLine 只接受舊格式 B20261106-002，新格式 BMJF20261106-002
   // 全部被濾走，lines 係空就靜靜哋 return，飛書永遠收唔到新單。宜家格式唔啱會出提示，唔再無聲漏單。
   if (!lines.length) { finish("未能同步去飛書（記錄資料不完整），記錄已存喺呢部裝置，之後去訂單記錄頁撳「重新同步」。"); return; }
-  // 2026-11-27 自動重試：飛書寫入而家可達 16 秒，舊 20 秒 timeout 好易 cut 線。
-  // 失敗嗰陣 30 秒後自動再試，最多 3 次（提交本身冪等＋Worker 單號鎖，重試唔會開多重複行）；
-  // stock_below_cap 係業務拒絕，唔重試。
+  // v2 自動重試：失敗嗰陣 30 秒後自動再試，最多 3 次。重試之前一定先查（見 attempt），
+  // 唔會盲目原樣再交；stock_below_cap 係業務拒絕，唔重試。
   var ctrl = null, timer = null, tries = 0;
-  function attempt(){
-    tries++;
-    try { ctrl = new AbortController(); timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} }, 45000); } catch (e) { ctrl = null; }
-    var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lines: lines, orderDiscount: orderDiscount || null }) };
+  function scheduleRetry(note){
+    if (statusEl) { try { statusEl.textContent = String(statusEl.textContent || "").replace("（飛書同步緊…）", note); } catch (e) {} }
+    setTimeout(attempt, SUBMIT_RETRY_MS);
+  }
+  function doSubmit(){
+    try { ctrl = new AbortController(); timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} }, SUBMIT_TIMEOUT_MS); } catch (e) { ctrl = null; }
+    var body = { action: "submit", lines: lines, orderDiscount: orderDiscount || null, clientRef: clientRef };
+    if (orderNoKnown) body.order = orderNoKnown;
+    var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
     if (ctrl) opts.signal = ctrl.signal;
-    fetch(SALES_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
+    fetch(V2_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
       if (timer) clearTimeout(timer);
       if (j && j.ok) {
-      // Worker 返埋每行嘅飛書 record_id（順序同 lines 一致），存返入本地記錄，之後編輯／刪除可以直接用 record_id 定位，唔使再靠配對。
-      // 舊版 Worker 冇 recordIds 嗰陣照樣當成功，唔會壞。
-      if (Array.isArray(j.recordIds) && j.recordIds.length === lines.length) {
-        try {
-          var _arr = loadRecords();
-          // 2026-11-18 修正：舊版用 _arr[k]（位置）配對——同一張單連續提交嗰陣，
-          // 幾個回調先後讀到同一個 _arr，全部寫入 _arr[0]，其餘本地行永遠冇 feishuId，
-          // 之後記錄頁自動同步會將佢哋當未同步行再補一次，喺飛書開多重複行。
-          // 宜家每行 id 派去第一行「未有 feishuId」嘅同單同產品行，每個 id 只派一次。
-          for (var k = 0; k < lines.length; k++) {
-            for (var m = 0; m < _arr.length; m++) {
-              var _r = _arr[m];
-              if (_r && !_r.feishuId && _r.order === lines[k].order && _r.product === lines[k].product && _r.store === lines[k].store) { _r.feishuId = j.recordIds[k]; break; }
-            }
-          }
-          saveRecords(_arr);
-        } catch (e) {}
+        orderNoKnown = markLocalSynced(clientRef, lines, j);
+        updateSubmitStatusOrder(orderNoKnown);
+        finish("已同步去飛書「銷售紀錄」（" + lines.length + " 行）。" + (syncStatus === "待確認" ? "（已暫存，未扣庫存）" : "") + (j.alreadyDone ? "（之前已經入咗，冇重複寫入）" : ""));
       }
-      finish("已同步去飛書「銷售紀錄」（" + lines.length + " 行）。" + (syncStatus === "待確認" ? "（已暫存，未扣庫存）" : ""));
+      else if (j && j.error === "stock_below_cap") finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置。");
+      else if (j && (j.error === "submit_in_progress" || j.error === "seq_in_progress")) scheduleRetry("（同步進行緊，30 秒後自動再試…）");
+      else if (tries < 3) scheduleRetry("（同步失敗，30 秒後自動再試…）");
+      else finish("未能同步去飛書（記錄已存喺呢部裝置），稍後可再提交。");
+    }).catch(function(){
+      if (timer) clearTimeout(timer);
+      if (tries < 3) scheduleRetry("（同步失敗，30 秒後自動再試…）");
+      else finish("未能同步去飛書（記錄已存喺呢部裝置），稍後可再提交。");
+    });
+  }
+  function attempt(){
+    tries++;
+    if (orderNoKnown && tries > 1) {
+      // 已知單號嘅重試：先查 GET /order/{orderNo}，唔好盲目再交。
+      fetchOrderStatus(orderNoKnown).then(function(st){
+        if (st && st.status === "done") {
+          // 伺服器話已經入咗：唔再交，直接標同步（用存好嘅 recordIds）。
+          orderNoKnown = markLocalSynced(clientRef, lines, { order: orderNoKnown, recordIds: st.recordIds || [] });
+          updateSubmitStatusOrder(orderNoKnown);
+          finish("已同步去飛書「銷售紀錄」（" + lines.length + " 行）。" + (syncStatus === "待確認" ? "（已暫存，未扣庫存）" : "") + "（之前已經入咗，冇重複寫入）");
+        } else if (st && st.status === "in_progress") {
+          scheduleRetry("（同步進行緊，30 秒後自動再試…）");
+        } else if (st && st.status === "never_seen") {
+          doSubmit();
+        } else {
+          // 查唔到（KV 唔到／網絡錯）：fail closed，唔交住，等下一次重試再查。
+          scheduleRetry("（同步失敗，30 秒後自動再試…）");
+        }
+      });
+    } else {
+      // 第一次交，或者未派號（唔知單號）：直接交，Worker 憑 clientRef＋KV 冪等 key 把關。
+      doSubmit();
     }
-    else if (j && j.error === "stock_below_cap") finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置。");
-    else if (tries < 3) {
-      if (statusEl) { try { statusEl.textContent = String(statusEl.textContent || "").replace("（飛書同步緊…）", "（同步失敗，30 秒後自動再試…）"); } catch (e) {} }
-      setTimeout(attempt, 30000);
-    }
-    else finish("未能同步去飛書（記錄已存喺呢部裝置），稍後可再提交。");
-  }).catch(function(){
-    if (timer) clearTimeout(timer);
-    if (tries < 3) {
-      if (statusEl) { try { statusEl.textContent = String(statusEl.textContent || "").replace("（飛書同步緊…）", "（同步失敗，30 秒後自動再試…）"); } catch (e) {} }
-      setTimeout(attempt, 30000);
-    }
-    else finish("未能同步去飛書（記錄已存喺呢部裝置），稍後可再提交。");
-  });
   }
   attempt();
 }
-// 編輯記錄之後（改價／改數量／改原因），將改好嗰行即刻 POST 去 Worker 更新飛書「銷售紀錄」嗰行。
-// 本地記錄一定先存好，同步失敗唔會影響本地記錄；下次再編輯同一行會再試同步一次。
-// 如果飛書嗰邊搵唔到嗰行（例如原本提交嗰陣同步失敗），Worker 會補返成行。
-// 刪除一行記錄之後，將飛書「銷售紀錄」嗰行刪埋。飛書本來已經冇嗰行都算成功。
-// 注意：成個記錄表「清空」唔會同步——嗰個只係清呢部裝置嘅記錄，唔係刪除飛書數據。
+// v2：編輯／刪除喺記錄頁做（見 bettereat-order-records.html）。
+// 編輯只可以改已有行（一定要有 recordId，搵唔到就報錯，唔會補開新行）；
+// 刪除要等 Worker 確認先至喺本地刪走。
 function confirmVerifiedSubmit(status){
   // status：「已確認」（確認提交，扣庫存）／「待確認」（暫存，唔扣庫存）；唔傳就預設已確認。
   if (submitInFlight) return; // 提交緊，唔好重複入
@@ -1465,26 +1427,14 @@ function confirmVerifiedSubmit(status){
   var _nd = new Date();
   function _p2(n){ return (n < 10 ? "0" : "") + n; }
   var time = _nd.getFullYear() + "-" + _p2(_nd.getMonth() + 1) + "-" + _p2(_nd.getDate()) + " " + _p2(_nd.getHours()) + ":" + _p2(_nd.getMinutes());
-  // 樂觀提交（2026-11-27）：單號用預取返嚟嘅 Worker 號（入頁／上次提交後已經喺背景攞定），即刻有號用，唔使等 Worker；
-  // 未預取到就即刻用本機號碼，之後記錄頁自動同步會補返。提交本身同步做（存本地＋顯示「已提交」），飛書同步喺背景慢慢做。
+  // v2 樂觀提交（DESIGN.md §2.4）：單號唔預取、唔由本機估——撳「確認提交」嗰陣，
+  // 先將行存入本地 outbox（clientRef 係呢張單嘅穩定身份，重試用同一個 ref），
+  // 再經 submitOrder 一次過問 Worker 攞號＋提交；號喺提交成功先落實，失敗唔佔號。
+  // 提交本身同步做（存本地＋顯示「已提交」），飛書同步喺背景慢慢做。
   submitInFlight = true;
   setSubmitButtonsDisabled(true);
   try {
-    var workerNo = prefetchedOrderNo; prefetchedOrderNo = null;
-    prefetchWorkerOrderNo(); // 即刻為下一單預取號
-    // 雙向派號（2026-11-27）：Worker 號只睇飛書，未同步嘅本地行可能已經用咗同一個號
-    // （-004 卡住就係咁嚟）；Worker 號嘅序號大過本地記錄最大先用佢，否則用本地下一個號。
-    // 注意：呢度只可以同本地「記錄」比較，唔可以同計數器比較——預取嗰陣已經將 Worker 號寫入計數器。
-    var orderNo = workerNo, fromWorker = !!workerNo;
-    var _ymd = time.split(" ")[0].replace(/-/g, "");
-    var _lseq = localMaxRecordSeq(getRecordsShop(), _ymd);
-    if (orderNo) {
-      var _wm = orderNo.match(/-(\d{3})$/);
-      var _wseq = _wm ? parseInt(_wm[1], 10) : 0;
-      if (_wseq <= _lseq) { orderNo = nextOrderNo(); fromWorker = false; }
-    } else {
-      orderNo = nextOrderNo();
-    }
+    var clientRef = "v2-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
     var meta = { time: time, store: getRecordsShop(), name: "", phone: "", date: "", time2: "", remarks: "" };
     // 待PROCESS 分行（2026-11-27）：用核實面板嗰陣背景預取返嚟嘅可扣數量（prefetchedAllow）。
     // 有貨嗰部分即扣，唔夠嗰部分開多行待PROCESS，備註「未收貨，待 admin check」，暫唔扣庫存。
@@ -1507,19 +1457,19 @@ function confirmVerifiedSubmit(status){
         var _conf = _a ? _a.confirmed : l.qty;
         var _pend = _a ? _a.pending : 0;
         if (_conf > 0) {
-          rows.push({ order: orderNo, time: meta.time, store: meta.store, name: meta.name, phone: meta.phone, date: meta.date, time2: meta.time2, product: l.name, qty: _conf, price: l.price, subtotal: Math.round(_conf * l.price * 100) / 100, orderTotal: total, status: submitStatus, reason: l.reason, remarks: meta.remarks,
+          rows.push({ order: "", clientRef: clientRef, time: meta.time, store: meta.store, name: meta.name, phone: meta.phone, date: meta.date, time2: meta.time2, product: l.name, qty: _conf, price: l.price, subtotal: Math.round(_conf * l.price * 100) / 100, orderTotal: total, status: submitStatus, reason: l.reason, remarks: meta.remarks,
             freeQty: pl.freeQty, unitPrice: pl.unitPrice, promoRule: pl.promoRule, promoType: pl.promoType,
             giftCode: pl.giftCode || "", giftProduct: pl.giftProduct || "" });
         }
         if (_pend > 0) {
           pendingQtyTotal += _pend;
-          rows.push({ order: orderNo, time: meta.time, store: meta.store, name: meta.name, phone: meta.phone, date: meta.date, time2: meta.time2, product: l.name, qty: _pend, price: l.price, subtotal: Math.round(_pend * l.price * 100) / 100, orderTotal: total, status: "待PROCESS", reason: l.reason, remarks: (meta.remarks ? meta.remarks + " " : "") + "待PROCESS：未收貨，待 admin check",
+          rows.push({ order: "", clientRef: clientRef, time: meta.time, store: meta.store, name: meta.name, phone: meta.phone, date: meta.date, time2: meta.time2, product: l.name, qty: _pend, price: l.price, subtotal: Math.round(_pend * l.price * 100) / 100, orderTotal: total, status: "待PROCESS", reason: l.reason, remarks: (meta.remarks ? meta.remarks + " " : "") + "待PROCESS：未收貨，待 admin check",
             freeQty: _conf > 0 ? 0 : pl.freeQty, unitPrice: pl.unitPrice, promoRule: pl.promoRule, promoType: pl.promoType,
             giftCode: pl.giftCode || "", giftProduct: pl.giftProduct || "" });
         }
       } else if (pl.freeQty > 0) {
         var _fa = allowMap ? allowByProduct[String(l.name).trim()] : null;
-        extraLines.push({ order: orderNo, recordDate: _dt[0], recordTime: _dt[1] || "", store: meta.store,
+        extraLines.push({ order: "", clientRef: clientRef, recordDate: _dt[0], recordTime: _dt[1] || "", store: meta.store,
           product: l.name, qty: 0, price: l.price, subtotal: 0, reason: l.reason, remarks: "",
           status: (_fa && _fa.confirmed <= 0) ? "待PROCESS" : submitStatus, freeQty: pl.freeQty, giftProduct: l.name, giftProductCode: l.code,
           unitPrice: l.price, promoRule: pl.promoRule, promoType: pl.promoType });
@@ -1537,8 +1487,8 @@ function confirmVerifiedSubmit(status){
     if (totalFree > 0) promoBits.push("送 " + totalFree + " 件");
     var promoSuffix = promoBits.length ? "（優惠：" + promoBits.join("；") + "）" : "";
     if (st) { st.textContent = (submitStatus === "待確認"
-      ? "已暫存：新增 " + rows.length + " 行記錄（一個產品一行），訂單編號：" + orderNo + "，訂單總金額：" + fmtMoney(total) + promoSuffix + "，未扣庫存（飛書同步緊…）。之後去訂單記錄頁確認。"
-      : "已提交：新增 " + rows.length + " 行記錄（一個產品一行），訂單編號：" + orderNo + "，訂單總金額：" + fmtMoney(total) + promoSuffix + "（飛書同步緊…）。" + (pendingQtyTotal > 0 ? "其中 " + pendingQtyTotal + " 件待PROCESS（未收貨，待 admin 確認，暫未扣庫存）。" : "")) + (fromWorker ? "" : "（單號由呢部機發出，Worker 未能派號，之後喺訂單記錄頁會自動同步去飛書。）"); st.className = "status ok"; }
+      ? "已暫存：新增 " + rows.length + " 行記錄（一個產品一行），訂單編號派緊…，訂單總金額：" + fmtMoney(total) + promoSuffix + "，未扣庫存（飛書同步緊…）。之後去訂單記錄頁確認。"
+      : "已提交：新增 " + rows.length + " 行記錄（一個產品一行），訂單編號派緊…，訂單總金額：" + fmtMoney(total) + promoSuffix + "（飛書同步緊…）。" + (pendingQtyTotal > 0 ? "其中 " + pendingQtyTotal + " 件待PROCESS（未收貨，待 admin 確認，暫未扣庫存）。" : "")); st.className = "status ok"; }
     syncSalesToFeishu(rows, st, submitStatus, orderDiscount, extraLines);
     if (submitStatus === "已確認") {
       // 庫存變咗（已確認單扣咗數）：30 秒後背景刷新每款剩數，等飛書同步有時間完成。

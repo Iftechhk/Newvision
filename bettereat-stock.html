@@ -247,8 +247,14 @@
 </div>
 
 <script>
-var WORKER_URL = "https://bettereat-sales-proxy.yan-lam.workers.dev";
-var PRODUCTS_URL = "https://www.newvision-tech.com.hk/bettereat_products.json";
+// ===== BETTEREAT 庫存管理 v2（平台重建 Phase 2B，DESIGN.md §2.5）=====
+// 數據層由頭寫過：飛書係真相、本地只係快取；寫入 action 未開通（Worker 回 501）嗰陣顯示清楚訊息，唔當成功；
+// 讀數失敗嗰陣舊數據要標明係舊數據，唔可以扮新數。版面／流程／字眼／按鈕跟足 v1。
+// 寫入 v2 Worker 嘅 URL 得呢一個常數：切換嗰陣改呢度就得（之後搬去 it@ 戶口嗰陣改呢行）。
+// v2 Worker 名 bettereat-sales-v2（Phase 1 未部署，舊 bettereat-sales-proxy 繼續 live）。
+var V2_WORKER_URL = "https://bettereat-sales-proxy.yan-lam.workers.dev";
+var PRODUCTS_SITE_URL = "https://www.newvision-tech.com.hk/bettereat_products.json";
+var PRODUCTS_URL = V2_WORKER_URL + "/data/products";
 var LOGIN_KEY = "bettereat_order_login";
 var SHOP_LABELS = ["謝斐 (MJF)", "淘大 (MAP)", "Aeon (MKH)", "將軍澳 (MMCP)"];
 var SHOP_CODES = { "謝斐 (MJF)": "MJF", "淘大 (MAP)": "MAP", "Aeon (MKH)": "MKH", "將軍澳 (MMCP)": "MMCP" };
@@ -257,9 +263,19 @@ var products = [];
 var selectedStocktake = [];
 var lastVarianceRows = [];
 var lastVarianceTotals = null;
-var DATA_URL = "https://www.newvision-tech.com.hk/bettereat_sold_data.json";
+var DATA_SITE_URL = "https://www.newvision-tech.com.hk/bettereat_sold_data.json";
+var DATA_URL = V2_WORKER_URL + "/data/sold";
+// 2026-11-27 同步搬入 Worker：數據主讀 Worker KV（每晚 22:30 Cron 同步），讀唔到跌返站內 JSON（GitHub 排程後備）
+function fetchJsonWithFallback(workerUrl, siteUrl){
+  return fetch(workerUrl + "?t=" + Date.now()).then(function(r){ if (!r.ok) throw new Error("http " + r.status); return r.json(); }).catch(function(){
+    return fetch(siteUrl + "?t=" + Date.now()).then(function(r){ return r.json(); });
+  });
+}
 var cPayload = null;
 var cDate = "";
+var cStale = false; // C 表上次讀取成功之後再讀失敗，畫面顯示緊舊數據
+var cEverLoaded = false; // C 表曾經成功讀取過
+var adjLoaded = false, stLoaded = false, recvLoaded = false; // 各列表曾經成功讀取過（失敗嗰陣標明舊數據）
 
 function esc(s){ return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 function pick(r){ for (var i = 1; i < arguments.length; i++) { var v = r[arguments[i]]; if (v !== undefined && v !== null && v !== "") return v; } return ""; }
@@ -279,13 +295,20 @@ function errText(e){
   if (e === "table_not_configured") return "伺服器未設定好庫存表格，請聯絡管理員。";
   if (e === "bad_qty") return "確認收到數量唔啱（要 0–9999 整數）。";
   if (e === "stock_below_cap") return "未收貨扣數已到上限（最多負 5 件），請先確認收貨再試。";
+  if (e === "not_opened") return "呢個功能喺新系統未開通（重建中），請稍後再試。";
   return String(e);
 }
 function callWorker(action, payload){
   var body = { action: action };
   if (payload) for (var k in payload) body[k] = payload[k];
-  return fetch(WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+  return fetch(V2_WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
     .then(function(res){ return res.json(); })
+    .then(function(j){
+      // v2 Worker 未實作嘅 action 回 501 not_implemented_in_v2_phase1：轉做 not_opened，
+      // 等各區顯示「未開通」而唔係當成功／靜靜哋失敗；本地狀態唔郁。
+      if (j && j.error === "not_implemented_in_v2_phase1") return { ok: false, error: "not_opened" };
+      return j;
+    })
     .catch(function(){ return { ok: false, error: "network" }; });
 }
 
@@ -360,7 +383,7 @@ function onStoreChange(){
 
 // ===== 產品目錄 =====
 function loadProducts(){
-  return fetch(PRODUCTS_URL + "?t=" + Date.now()).then(function(r){ return r.json(); }).then(function(j){
+  return fetchJsonWithFallback(PRODUCTS_URL, PRODUCTS_SITE_URL).then(function(j){
     var list = (j && j.products) || [];
     products = list.filter(function(p){ return p && p.product_code; }).map(function(p){
       return { code: p.product_code, name: p.product_name, category: p.category, price: p.standard_price };
@@ -422,8 +445,9 @@ function loadStock(){
   if (cPayload) { renderCStock(); return Promise.resolve(); }
   var st = document.getElementById("stockStatus");
   if (st) st.textContent = "載入緊 C 表數據…";
-  return fetch(DATA_URL + "?t=" + Date.now()).then(function(r){ return r.json(); }).then(function(j){
+  return fetchJsonWithFallback(DATA_URL, DATA_SITE_URL).then(function(j){
     cPayload = j;
+    cEverLoaded = true; cStale = false;
     if (!cPayload.history) { cPayload.history = {}; if (j.date) cPayload.history[j.date] = j.records || []; }
     var dates = Object.keys(cPayload.history).sort().reverse();
     if (!cDate || !cPayload.history[cDate]) cDate = j.date || dates[0] || "";
@@ -435,7 +459,15 @@ function loadStock(){
     if (st) st.textContent = "";
     renderCStock();
   }).catch(function(){
-    if (st) st.textContent = "載入 C 表數據失敗，請按重新載入再試。";
+    if (cEverLoaded) {
+      // 之前讀到過：舊表留喺畫面，但一定要話明係舊數據
+      cStale = true;
+      if (st) st.textContent = "載入 C 表數據失敗，顯示舊數據，請按重新載入再試。";
+      var meta = document.getElementById("stockMeta");
+      if (meta) meta.textContent = "數據日期：" + cDate + " ｜ ⚠ 未能更新，顯示舊數據";
+    } else {
+      if (st) st.textContent = "載入 C 表數據失敗，請按重新載入再試。";
+    }
   });
 }
 function reloadCStock(){ cPayload = null; loadStock(); }
@@ -470,7 +502,7 @@ function renderCStock(){
   }
   body.innerHTML = html || '<tr><td colspan="7" style="color:#71879a;">呢日未有 C 表記錄</td></tr>';
   var meta = document.getElementById("stockMeta");
-  if (meta) meta.textContent = "數據日期：" + cDate + " ｜ C 表快照更新時間：" + (cPayload.generated_at || "") + " ｜ 共 " + rows.length + " 行";
+  if (meta) meta.textContent = "數據日期：" + cDate + " ｜ C 表快照更新時間：" + (cPayload.generated_at || "") + " ｜ 共 " + rows.length + " 行" + (cStale ? " ｜ ⚠ 未能更新，顯示舊數據" : "");
 }
 
 // ===== 待收貨未對沖（異動帳）：帳面負數 = 未收貨先扣咗嘅件數 =====
@@ -554,9 +586,10 @@ function loadAdjustList(){
   if (f && f.value) payload.status = f.value;
   return callWorker("adjustList", payload).then(function(j){
     if (!j || !j.ok) {
-      if (st) st.textContent = "載入調整記錄失敗：" + errText(j && j.error);
+      if (st) st.textContent = "載入調整記錄失敗：" + errText(j && j.error) + (adjLoaded ? "（顯示緊舊記錄。）" : "");
       return;
     }
+    adjLoaded = true;
     renderAdjustList(j.records || []);
     if (st && st.textContent === "載入緊…") st.textContent = "";
   });
@@ -653,9 +686,10 @@ function loadStocktakeList(){
   if (d && d.value) payload.date = d.value;
   return callWorker("stocktakeList", payload).then(function(j){
     if (!j || !j.ok) {
-      if (st) st.textContent = "載入盤點清單失敗：" + errText(j && j.error);
+      if (st) st.textContent = "載入盤點清單失敗：" + errText(j && j.error) + (stLoaded ? "（顯示緊舊記錄。）" : "");
       return;
     }
+    stLoaded = true;
     renderStocktakeList(j.records || []);
     if (st && st.textContent === "載入緊…") st.textContent = "";
   });
@@ -796,9 +830,10 @@ function loadReceiveList(){
   if (f && f.value) payload.status = f.value;
   return callWorker("receiveList", payload).then(function(j){
     if (!j || !j.ok) {
-      if (st) st.textContent = "載入收貨記錄失敗：" + errText(j && j.error);
+      if (st) st.textContent = "載入收貨記錄失敗：" + errText(j && j.error) + (recvLoaded ? "（顯示緊舊記錄。）" : "");
       return;
     }
+    recvLoaded = true;
     renderReceiveList(j.records || []);
     if (st && st.textContent === "載入緊…") st.textContent = "";
   });

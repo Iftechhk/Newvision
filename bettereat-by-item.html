@@ -128,8 +128,21 @@
 </div>
 
 <script>
-var DATA_URL = "https://www.newvision-tech.com.hk/bettereat_sold_data.json";
-var PRODUCTS_URL = "https://www.newvision-tech.com.hk/bettereat_products.json";
+// ===== BETTEREAT 按產品檢視 v2（平台重建 Phase 2B，DESIGN.md §2.5）=====
+// 數據層由頭寫過：飛書係真相、本地只係快取；讀數失敗嗰陣舊數據要標明係舊數據，唔可以扮新數。
+// 版面／流程／字眼／按鈕跟足 v1，門店唔使重新學。
+// 寫入 v2 Worker 嘅 URL 得呢一個常數：切換嗰陣改呢度就得（之後搬去 it@ 戶口嗰陣改呢行）。
+// v2 Worker 名 bettereat-sales-v2（Phase 1 未部署，舊 bettereat-sales-proxy 繼續 live）。
+var V2_WORKER_URL = "https://bettereat-sales-proxy.yan-lam.workers.dev";
+var DATA_SITE_URL = "https://www.newvision-tech.com.hk/bettereat_sold_data.json";
+var PRODUCTS_SITE_URL = "https://www.newvision-tech.com.hk/bettereat_products.json";
+var DATA_URL = V2_WORKER_URL + "/data/sold";
+var PRODUCTS_URL = V2_WORKER_URL + "/data/products";
+function fetchJsonWithFallback(workerUrl, siteUrl){
+  return fetch(workerUrl + "?t=" + Date.now()).then(function(r){ if (!r.ok) throw new Error("http " + r.status); return r.json(); }).catch(function(){
+    return fetch(siteUrl + "?t=" + Date.now()).then(function(r){ return r.json(); });
+  });
+}
 var productsByCode = {}; // product_code -> { price, cost }（T1 產品主檔；讀唔到就留空，單價／金額顯示 —）
 var STORES = ["MJF", "MAP", "MKH", "MMCP"];
 // 銷售 JSON 嘅 store 係全名（「謝斐 (MJF)」），唔係代號；入 map 嗰陣一律轉做代號
@@ -138,6 +151,7 @@ var CODE_BY_LABEL = { "謝斐 (MJF)": "MJF", "淘大 (MAP)": "MAP", "Aeon (MKH)"
 function storeCode(s){ if (!s) return "—"; if (CODE_BY_LABEL[s]) return CODE_BY_LABEL[s]; return s; }
 var STORE_NAMES = { MJF: "謝斐", MAP: "淘大", MKH: "Aeon", MMCP: "將軍澳" };
 var payload = null, curDate = "", selected = {}, selOnly = false, searchText = "";
+var lastGoodAt = ""; // 上次成功讀取數據嘅 generated_at（讀數失敗嗰陣用嚟標明舊數據）
 
 function fmt(n){ return (Math.round(n * 10) / 10).toLocaleString("en-US"); }
 function esc(s){ return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
@@ -160,9 +174,10 @@ function showDash(){
 }
 function loadData(){
   // 產品主檔另外抓：失敗唔拖垮銷售數據，只係單價／金額顯示 —
-  var productsP = fetch(PRODUCTS_URL + "?t=" + Date.now()).then(function(r){ return r.json(); }).catch(function(){ return null; });
-  fetch(DATA_URL + "?t=" + Date.now()).then(function(r){ return r.json(); }).then(function(j){
+  var productsP = fetchJsonWithFallback(PRODUCTS_URL, PRODUCTS_SITE_URL).catch(function(){ return null; });
+  fetchJsonWithFallback(DATA_URL, DATA_SITE_URL).then(function(j){
     payload = j;
+    lastGoodAt = j.generated_at || "";
     if (!payload.history) { payload.history = {}; payload.history[j.date] = j.records || []; }
     if (!payload.history[j.date] && j.records) payload.history[j.date] = j.records;
     var dates = Object.keys(payload.history).sort().reverse();
@@ -186,7 +201,13 @@ function loadData(){
     }
     applyDate();
   }).catch(function(){
-    document.getElementById("metaLine").textContent = "暫時讀取唔到數據，請稍後重新整理。";
+    if (payload) {
+      // 之前讀到過，今次失敗：舊表留喺畫面，但一定要話明係舊數，唔可以扮新數
+      document.getElementById("metaLine").textContent =
+        "數據未能更新，顯示舊數據（上次成功讀取，更新時間：" + (lastGoodAt || "—") + "），請稍後重新整理。";
+    } else {
+      document.getElementById("metaLine").textContent = "暫時讀取唔到數據，請稍後重新整理。";
+    }
   });
 }
 function allocPcs(r){
