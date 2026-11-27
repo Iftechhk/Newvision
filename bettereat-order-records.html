@@ -223,6 +223,21 @@ var feishuRows = [];
 var feishuLoaded = false;
 var feishuFailed = false;
 var feishuSyncTime = "";
+// 自動重連：list 失敗嗰陣唔再等用家人手 reload，背景按 5／15／30／60 秒退避重試，直到連到為止。
+// （2026-11-27 實測：飛書讀約 5 秒、寫入可達 16 秒，舊 20 秒 timeout 好易 cut 線，
+// 連帶未同步單留喺部機。重試只係重新讀 list，唔會喺未讀到飛書之前亂標／亂推本地行。）
+var feishuRetryTimer = null;
+var feishuRetryCount = 0;
+var FEISHU_RETRY_DELAYS = [5000, 15000, 30000, 60000];
+function scheduleFeishuRetry(){
+  if (feishuRetryTimer) return;
+  var ms = FEISHU_RETRY_DELAYS[Math.min(feishuRetryCount, FEISHU_RETRY_DELAYS.length - 1)];
+  feishuRetryCount++;
+  feishuRetryTimer = setTimeout(function(){ feishuRetryTimer = null; loadFeishuRecords(); }, ms);
+}
+function clearFeishuRetry(){
+  if (feishuRetryTimer) { clearTimeout(feishuRetryTimer); feishuRetryTimer = null; }
+}
 // 自動同步守衛：每頁載入最多自動同步一次；autoSyncRunning 進行緊嗰陣，手動重新同步要等一等，免得同一行重複傳送。
 var autoSyncDone = false;
 var autoSyncRunning = false;
@@ -271,23 +286,24 @@ function updateFeishuSyncStatus(){
   if (feishuLoaded) {
     st.textContent = "已同步飛書：" + feishuRows.length + " 行，更新時間 " + feishuSyncTime + "。";
   } else if (feishuFailed) {
-    st.textContent = "未能連接飛書，只顯示呢部機嘅記錄。";
+    st.textContent = "未能連接飛書，只顯示呢部機嘅記錄。自動重試緊（第 " + feishuRetryCount + " 次），連到之後會自動同步未同步嘅記錄。";
   } else {
     st.textContent = "載入飛書記錄緊…";
   }
 }
-// 向 Worker 攞飛書全部記錄；失敗就留返本地記錄顯示，唔會變空白表。
+// 向 Worker 攞飛書全部記錄；失敗就留返本地記錄顯示，唔會變空白表，背景自動重試直到連到。
 function loadFeishuRecords(){
+  clearFeishuRetry();
   updateFeishuSyncStatus();
   var ctrl = null, timer = null;
-  try { ctrl = new AbortController(); timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} }, 20000); } catch (e) { ctrl = null; }
+  try { ctrl = new AbortController(); timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} }, 45000); } catch (e) { ctrl = null; }
   var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "list" }) };
   if (ctrl) opts.signal = ctrl.signal;
   fetch(SALES_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
     if (timer) clearTimeout(timer);
     if (j && j.ok && Array.isArray(j.records)) {
       feishuRows = j.records.map(feishuRowToLocal);
-      feishuLoaded = true; feishuFailed = false;
+      feishuLoaded = true; feishuFailed = false; feishuRetryCount = 0;
       syncLocalStatusFromFeishu(); // 飛書最新狀態寫返入本地 mirror（見下）
       var d = new Date();
       function p2(n){ return (n < 10 ? "0" : "") + n; }
@@ -295,12 +311,14 @@ function loadFeishuRecords(){
       editingIndex = -1; editDraft = null; // 飛書重新載入，顯示次序可能變，取消緊嘅編輯免得改錯行
     } else {
       feishuFailed = true;
+      scheduleFeishuRetry();
     }
     renderRecords();
     if (j && j.ok && Array.isArray(j.records)) maybeAutoSyncUnsynced();
   }).catch(function(){
     if (timer) clearTimeout(timer);
     feishuFailed = true;
+    scheduleFeishuRetry();
     renderRecords();
   });
 }
@@ -496,7 +514,7 @@ function confirmPendingOrder(order, store){
   var st = document.getElementById("pendingStatus");
   if (st) { st.textContent = "確認緊「" + order + "」…"; st.className = "status"; }
   var ctrl = null, timer = null;
-  try { ctrl = new AbortController(); timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} }, 20000); } catch (e) { ctrl = null; }
+  try { ctrl = new AbortController(); timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} }, 45000); } catch (e) { ctrl = null; }
   var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "confirmOrder", order: order, store: store || "" }) };
   if (ctrl) opts.signal = ctrl.signal;
   fetch(SALES_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
@@ -520,7 +538,7 @@ function cancelPendingOrder(order, store){
   var st = document.getElementById("pendingStatus");
   if (st) { st.textContent = "取消緊「" + order + "」…"; st.className = "status"; }
   var ctrl = null, timer = null;
-  try { ctrl = new AbortController(); timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} }, 20000); } catch (e) { ctrl = null; }
+  try { ctrl = new AbortController(); timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} }, 45000); } catch (e) { ctrl = null; }
   var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "cancelOrder", order: order, store: store || "" }) };
   if (ctrl) opts.signal = ctrl.signal;
   fetch(SALES_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
@@ -654,7 +672,7 @@ function syncEditToFeishu(r){
   }
   if (st) { st.textContent = "已更新本地記錄，同步緊去飛書…"; st.className = "status"; }
   var ctrl = null, timer = null;
-  try { ctrl = new AbortController(); timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} }, 20000); } catch (e) { ctrl = null; }
+  try { ctrl = new AbortController(); timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} }, 45000); } catch (e) { ctrl = null; }
   // 有 feishuId 就直接更新嗰行（唔使再靠配對，撞號都唔會掂錯行）；冇就 Worker 會按訂單編號＋產品＋門店搵，搵唔到就補返成行。
   var body = { action: "update", line: line };
   if (r.feishuId) body.recordId = r.feishuId;
@@ -798,7 +816,7 @@ function syncDeleteToFeishu(order, product, store, recordId){
   var st = document.getElementById("recordsStatus");
   if (st) { st.textContent = "已刪除本地記錄，同步緊去飛書…"; st.className = "status"; }
   var ctrl = null, timer = null;
-  try { ctrl = new AbortController(); timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} }, 20000); } catch (e) { ctrl = null; }
+  try { ctrl = new AbortController(); timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} }, 45000); } catch (e) { ctrl = null; }
   // 有 feishuId 就直接刪嗰行；冇就按訂單編號＋產品＋門店搵嚟刪（舊做法）。
   var body = recordId ? { action: "delete", recordId: recordId }
     : { action: "delete", order: order, product: product, store: store || "" };

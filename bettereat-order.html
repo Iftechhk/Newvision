@@ -1143,7 +1143,7 @@ function requestWorkerOrderNo(store){
     var ctrl = null, timer = null;
     try {
       ctrl = new AbortController();
-      timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} finish(null); }, 8000);
+      timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} finish(null); }, 30000);
     } catch (e) { ctrl = null; }
     var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "nextOrderNo", store: store }) };
     if (ctrl) opts.signal = ctrl.signal;
@@ -1249,21 +1249,26 @@ function syncSalesToFeishu(rows, statusEl, status, orderDiscount, extraLines){
   function finish(msg){
     if (done) return; done = true;
     if (statusEl) {
-      // 樂觀提交嗰句「（飛書同步緊…）」已經過時，同步有結果就換走佢。
-      try { statusEl.textContent = String(statusEl.textContent || "").replace("（飛書同步緊…）", ""); } catch (e) {}
+      // 樂觀提交嗰句「（飛書同步緊…）」／重試嗰句已經過時，同步有結果就換走佢。
+      try { var _t = String(statusEl.textContent || ""); _t = _t.replace("（飛書同步緊…）", "").replace("（同步失敗，10 秒後自動再試…）", ""); statusEl.textContent = _t; } catch (e) {}
       statusEl.textContent += msg;
     }
   }
   // ⚠️ 2026-11-17 修正：舊版 recordToLine 只接受舊格式 B20261106-002，新格式 BMJF20261106-002
   // 全部被濾走，lines 係空就靜靜哋 return，飛書永遠收唔到新單。宜家格式唔啱會出提示，唔再無聲漏單。
   if (!lines.length) { finish("未能同步去飛書（記錄資料不完整），記錄已存喺呢部裝置，之後去訂單記錄頁撳「重新同步」。"); return; }
-  var ctrl = null, timer = null;
-  try { ctrl = new AbortController(); timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} }, 20000); } catch (e) { ctrl = null; }
-  var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lines: lines, orderDiscount: orderDiscount || null }) };
-  if (ctrl) opts.signal = ctrl.signal;
-  fetch(SALES_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
-    if (timer) clearTimeout(timer);
-    if (j && j.ok) {
+  // 2026-11-27 自動重試：飛書寫入而家可達 16 秒，舊 20 秒 timeout 好易 cut 線。
+  // 失敗嗰陣 10 秒後自動再試，最多 3 次（提交本身冪等，重試唔會開多重複行）；
+  // stock_below_cap 係業務拒絕，唔重試。
+  var ctrl = null, timer = null, tries = 0;
+  function attempt(){
+    tries++;
+    try { ctrl = new AbortController(); timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} }, 45000); } catch (e) { ctrl = null; }
+    var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lines: lines, orderDiscount: orderDiscount || null }) };
+    if (ctrl) opts.signal = ctrl.signal;
+    fetch(SALES_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
+      if (timer) clearTimeout(timer);
+      if (j && j.ok) {
       // Worker 返埋每行嘅飛書 record_id（順序同 lines 一致），存返入本地記錄，之後編輯／刪除可以直接用 record_id 定位，唔使再靠配對。
       // 舊版 Worker 冇 recordIds 嗰陣照樣當成功，唔會壞。
       if (Array.isArray(j.recordIds) && j.recordIds.length === lines.length) {
@@ -1285,11 +1290,21 @@ function syncSalesToFeishu(rows, statusEl, status, orderDiscount, extraLines){
       finish("已同步去飛書「銷售紀錄」（" + lines.length + " 行）。" + (syncStatus === "待確認" ? "（已暫存，未扣庫存）" : ""));
     }
     else if (j && j.error === "stock_below_cap") finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置。");
+    else if (tries < 3) {
+      if (statusEl) { try { statusEl.textContent = String(statusEl.textContent || "").replace("（飛書同步緊…）", "（同步失敗，10 秒後自動再試…）"); } catch (e) {} }
+      setTimeout(attempt, 10000);
+    }
     else finish("未能同步去飛書（記錄已存喺呢部裝置），稍後可再提交。");
   }).catch(function(){
     if (timer) clearTimeout(timer);
-    finish("未能同步去飛書（記錄已存喺呢部裝置），稍後可再提交。");
+    if (tries < 3) {
+      if (statusEl) { try { statusEl.textContent = String(statusEl.textContent || "").replace("（飛書同步緊…）", "（同步失敗，10 秒後自動再試…）"); } catch (e) {} }
+      setTimeout(attempt, 10000);
+    }
+    else finish("未能同步去飛書（記錄已存喺呢部裝置），稍後可再提交。");
   });
+  }
+  attempt();
 }
 // 編輯記錄之後（改價／改數量／改原因），將改好嗰行即刻 POST 去 Worker 更新飛書「銷售紀錄」嗰行。
 // 本地記錄一定先存好，同步失敗唔會影響本地記錄；下次再編輯同一行會再試同步一次。
