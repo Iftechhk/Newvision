@@ -65,6 +65,8 @@
   .card .name { font-size: 15px; font-weight: 700; line-height: 1.4; min-height: 42px; }
   .card .sub { font-size: 12px; color: #71879a; margin-top: 2px; }
   .card .price { font-size: 14px; font-weight: 700; color: #0a4f85; margin-top: 4px; }
+  .card .stock { font-size: 12px; margin-top: 4px; color: #0b5fa5; }
+  .card .stock.out { color: #c0392b; font-weight: 700; }
   .card .step { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
   .card .step .add { flex: 1; padding: 9px; font-size: 15px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #1c74b2, #0b5fa5); border: none; border-radius: 10px; cursor: pointer; }
   .card .step .minus, .card .step .plus { width: 38px; height: 38px; font-size: 20px; font-weight: 700; color: #0a4f85; background: #eef5fb; border: 1px solid #0b5fa5; border-radius: 10px; cursor: pointer; }
@@ -113,7 +115,7 @@
   .cartbar .go { background: linear-gradient(135deg, #1c74b2, #0b5fa5); color: #fff; }
   .cartbar button:disabled { opacity: .45; cursor: not-allowed; }
   .foot { color: #8fa3b5; font-size: 12px; margin-top: 16px; text-align: center; line-height: 1.8; }
-  @media (max-width: 1180px) { .grid { grid-template-columns: repeat(7, 1fr); gap: 8px; } .card { border-radius: 10px; } .card .imgwrap { padding-top: 100%; } .card .imgwrap .ph { font-size: 32px; } .card .body { padding: 6px 7px 7px; } .card .name { font-size: 12px; min-height: 32px; line-height: 1.35; } .card .sub { font-size: 11px; } .card .price { font-size: 12px; margin-top: 2px; } .card .step { margin-top: 6px; } .card .step .add { padding: 5px; font-size: 13px; border-radius: 8px; } .card .step .minus, .card .step .plus { width: 26px; height: 26px; font-size: 16px; border-radius: 8px; } .card .step .qty { font-size: 14px; min-width: 20px; } .cathead { font-size: 14px; } }
+  @media (max-width: 1180px) { .grid { grid-template-columns: repeat(7, 1fr); gap: 8px; } .card { border-radius: 10px; } .card .imgwrap { padding-top: 100%; } .card .imgwrap .ph { font-size: 32px; } .card .body { padding: 6px 7px 7px; } .card .name { font-size: 12px; min-height: 32px; line-height: 1.35; } .card .sub { font-size: 11px; } .card .price { font-size: 12px; margin-top: 2px; } .card .stock { font-size: 11px; margin-top: 2px; } .card .step { margin-top: 6px; } .card .step .add { padding: 5px; font-size: 13px; border-radius: 8px; } .card .step .minus, .card .step .plus { width: 26px; height: 26px; font-size: 16px; border-radius: 8px; } .card .step .qty { font-size: 14px; min-width: 20px; } .cathead { font-size: 14px; } }
   @media (max-width: 860px) { .grid { grid-template-columns: repeat(4, 1fr); } .side { width: 260px; flex-basis: 260px; top: 160px; } .cathead { top: 160px; } .catsum { top: 112px; } .catgroup { scroll-margin-top: 216px; } }
   @media (max-width: 640px) { .main { flex-direction: column; } .side { width: 100%; flex: none; position: static; } }
   @media (max-width: 560px) { .cartbar { flex-wrap: wrap; } .checkout .fields { grid-template-columns: 1fr; } }
@@ -292,6 +294,7 @@ function loadData(){
     renderCatSummary();
     document.getElementById("metaLine").textContent = "餐牌更新：" + j.date + " ｜ 共 " + products.length + " 款產品 ｜ 撳圖即加 1 件";
     renderGrid();
+    fetchStoreStock(); // 餐牌齊先問庫存（背景，讀唔到唔阻顯示）
     updateCart();
     // 等埋優惠規則先算讀完：等「價格更新」嗰陣，掣顯示完成嗰下規則已經係最新。
     // 讀唔到規則唔會阻住成頁（fetchPromoRules 自己會保留舊規則）。
@@ -355,6 +358,7 @@ function renderGrid(){
         '<div class="body"><div class="name">' + esc(p.name) + '</div>' +
         '<div class="sub">' + esc(p.code) + ' · ' + esc(p.unit) + '</div>' +
         (p.price !== undefined && p.price !== null && p.price !== "" ? '<div class="price">$' + esc(p.price) + (p.unit ? "/" + esc(p.unit) : "") + '</div>' : '') +
+        stockBadge(p) +
         '<div class="step">' + step + '</div></div></div>';
     });
     html += '</div></div>';
@@ -506,6 +510,7 @@ function setRecordsShop(v){
   // 轉店：預取嗰個號係舊店嘅，作廢再為新店預取。
   prefetchedOrderNo = null;
   prefetchWorkerOrderNo();
+  fetchStoreStock(); // 轉店即刻問新店庫存（背景，5 分鐘內唔重問）
 }
 function applyRecordsShopFromUrl(){
   try {
@@ -1188,6 +1193,42 @@ function prefetchStockAllow(){
     })
     .catch(function(){ prefetchAllowInFlight = false; });
 }
+// 訂購頁每款顯示剩餘庫存（2026-11-27）：入頁／轉店／提交後，背景問 Worker stockAllow（每款 qty 1）攞有效庫存 effQty
+// （異動帳同 C 表取大者，同 cap 檢查同一個數），按產品編號對返卡片顯示「剩 N 件」／「冇貨」。
+// 讀唔到就唔顯示，唔阻落單；提交嗰陣始終以核實面板預取＋Worker cap 為準，呢個數只係參考。
+var stockByCode = {};
+var stockLoadedStore = "";
+var stockLoadedAt = 0;
+var stockInFlight = false;
+function fetchStoreStock(force){
+  var store = getRecordsShop();
+  if (!store || !products.length) return;
+  if (stockInFlight) return;
+  if (!force && stockLoadedStore === store && Date.now() - stockLoadedAt < 300000) return;
+  var lines = products.map(function(p){ return { product: p.name, productCode: p.code, qty: 1 }; });
+  if (!lines.length) return;
+  stockInFlight = true;
+  fetch(SALES_WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "stockAllow", store: store, lines: lines }) })
+    .then(function(res){ return res.json(); })
+    .then(function(j){
+      stockInFlight = false;
+      if (j && j.ok && Array.isArray(j.lines)) {
+        var map = {};
+        j.lines.forEach(function(a){ if (a.productCode) map[a.productCode] = a.effQty; });
+        stockByCode = map;
+        stockLoadedStore = store;
+        stockLoadedAt = Date.now();
+        renderGrid();
+      }
+    })
+    .catch(function(){ stockInFlight = false; });
+}
+function stockBadge(p){
+  if (!stockByCode || stockByCode[p.code] === undefined || stockByCode[p.code] === null) return "";
+  var n = stockByCode[p.code];
+  if (n > 0) return '<div class="stock">剩 ' + n + ' 件</div>';
+  return '<div class="stock out">冇貨</div>';
+}
 function cartMatchesVerify(){
   var items = cartItems();
   if (!verifyOrig || items.length !== verifyOrig.length) return false;
@@ -1499,6 +1540,10 @@ function confirmVerifiedSubmit(status){
       ? "已暫存：新增 " + rows.length + " 行記錄（一個產品一行），訂單編號：" + orderNo + "，訂單總金額：" + fmtMoney(total) + promoSuffix + "，未扣庫存（飛書同步緊…）。之後去訂單記錄頁確認。"
       : "已提交：新增 " + rows.length + " 行記錄（一個產品一行），訂單編號：" + orderNo + "，訂單總金額：" + fmtMoney(total) + promoSuffix + "（飛書同步緊…）。" + (pendingQtyTotal > 0 ? "其中 " + pendingQtyTotal + " 件待PROCESS（未收貨，待 admin 確認，暫未扣庫存）。" : "")) + (fromWorker ? "" : "（單號由呢部機發出，Worker 未能派號，之後喺訂單記錄頁會自動同步去飛書。）"); st.className = "status ok"; }
     syncSalesToFeishu(rows, st, submitStatus, orderDiscount, extraLines);
+    if (submitStatus === "已確認") {
+      // 庫存變咗（已確認單扣咗數）：30 秒後背景刷新每款剩數，等飛書同步有時間完成。
+      setTimeout(function(){ fetchStoreStock(true); }, 30000);
+    }
     if (st && st.scrollIntoView) st.scrollIntoView();
   } finally {
     submitInFlight = false;
