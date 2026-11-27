@@ -174,6 +174,7 @@
       <option value="待確認">待確認</option>
       <option value="已確認">已確認</option>
       <option value="已取消">已取消</option>
+      <option value="待PROCESS">待PROCESS</option>
     </select>
     <button class="xbtn" onclick="clearRecordsDate()">清除日期</button>
     <button class="xbtn" id="exportBtn" onclick="exportRecords()">匯出 Excel</button>
@@ -208,7 +209,7 @@ var recordsDateFilter = "";
 var recordsStatusFilter = "";
 function setRecordsStatusFilter(v){ recordsStatusFilter = v || ""; }
 // 訂單狀態歸一：只認「待確認」／「已確認」／「已取消」，其他／冇就預設「已確認」（向後兼容）。
-function normStatus(s){ return (s === "待確認" || s === "已確認" || s === "已取消") ? s : "已確認"; }
+function normStatus(s){ return (s === "待確認" || s === "已確認" || s === "已取消" || s === "待PROCESS") ? s : "已確認"; }
 function rowStatus(r){ return normStatus(r && r.status); }
 function statusBadge(r){
   var s = rowStatus(r);
@@ -487,12 +488,13 @@ function pendingOrders(){
   var shop = getRecordsShop();
   var groups = {};
   feishuRows.forEach(function(r){
-    if (rowStatus(r) !== "待確認") return;
+    if (rowStatus(r) !== "待確認" && rowStatus(r) !== "待PROCESS") return;
     if (s && s.role === "shop" && r.store !== s.shop) return;
     if (shop && r.store !== shop) return;
     var key = (r.order || "") + "" + (r.store || "");
-    if (!groups[key]) groups[key] = { order: r.order || "", store: r.store || "", date: splitRecordTime(r.time).date, lines: 0, total: 0 };
+    if (!groups[key]) groups[key] = { order: r.order || "", store: r.store || "", date: splitRecordTime(r.time).date, lines: 0, total: 0, hasProcess: false };
     groups[key].lines++;
+    if (rowStatus(r) === "待PROCESS") groups[key].hasProcess = true;
     var st = parseFloat(r.subtotal);
     if (isFinite(st)) groups[key].total += st;
   });
@@ -511,11 +513,15 @@ function renderPendingOrders(){
   var orders = pendingOrders();
   if (!orders.length) { sec.style.display = "none"; listEl.innerHTML = ""; return; }
   sec.style.display = "block";
+  var _isAdmin = !!(getLoginSession() && getLoginSession().role === "admin");
   var html = "";
   orders.forEach(function(o){
-    html += '<div class="pendingorder"><div class="pinfo"><b>' + esc(o.order) + '</b> · ' + esc(o.store) + ' · ' + esc(o.date) + ' · ' + o.lines + ' 行 · ' + fmtMoney(Math.round(o.total * 100) / 100) + '</div>' +
-      '<div class="pbtns"><button class="xbtn primary" onclick="confirmPendingOrder(\'' + esc(o.order) + '\', \'' + esc(o.store) + '\')">確認</button>' +
-      '<button class="xbtn" onclick="cancelPendingOrder(\'' + esc(o.order) + '\', \'' + esc(o.store) + '\')">取消</button></div></div>';
+    // 待PROCESS 行只限 admin 確認：舖頭登入嗰陣唔顯示確認掣，淨係話等 admin 確認
+    var _btns = (o.hasProcess && !_isAdmin)
+      ? '<div class="pbtns"><span style="font-size:13px;color:#8a6d00;">待 admin 確認（未收貨，暫未扣庫存）</span></div>'
+      : '<div class="pbtns"><button class="xbtn primary" onclick="confirmPendingOrder(\'' + esc(o.order) + '\', \'' + esc(o.store) + '\')">確認</button>' +
+        '<button class="xbtn" onclick="cancelPendingOrder(\'' + esc(o.order) + '\', \'' + esc(o.store) + '\')">取消</button></div>';
+    html += '<div class="pendingorder"><div class="pinfo"><b>' + esc(o.order) + '</b> · ' + esc(o.store) + ' · ' + esc(o.date) + ' · ' + o.lines + ' 行 · ' + fmtMoney(Math.round(o.total * 100) / 100) + '</div>' + _btns + '</div>';
   });
   listEl.innerHTML = html;
 }
@@ -525,7 +531,7 @@ function confirmPendingOrder(order, store){
   if (st) { st.textContent = "確認緊「" + order + "」…"; st.className = "status"; }
   var ctrl = null, timer = null;
   try { ctrl = new AbortController(); timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} }, 45000); } catch (e) { ctrl = null; }
-  var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "confirmOrder", order: order, store: store || "" }) };
+  var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "confirmOrder", order: order, store: store || "", role: (getLoginSession() && getLoginSession().role) || "" }) };
   if (ctrl) opts.signal = ctrl.signal;
   fetch(SALES_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
     if (timer) clearTimeout(timer);

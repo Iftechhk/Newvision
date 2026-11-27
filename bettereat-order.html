@@ -1146,12 +1146,47 @@ function recomputeVerify(){
   if (dAmt) dAmt.textContent = orderDiscount ? "−" + fmtMoney(orderDiscount.amount) : "—";
   var dName = document.getElementById("vDiscountName");
   if (dName) dName.textContent = orderDiscount ? ("滿減優惠" + (orderDiscount.rule ? "（" + orderDiscount.rule + "）" : "")) : "滿減優惠";
+  prefetchStockAllow();
   var t = document.getElementById("verifyTotal");
   if (t) {
     if (!ok) t.textContent = "訂單總金額：（有未填好嘅行）";
     else if (hasPromo) t.textContent = "原價小計：" + fmtMoney(origTotal) + " ｜ 優惠已減：" + fmtMoney(Math.round((origTotal - payable) * 100) / 100) + " ｜ 應付金額：" + fmtMoney(payable);
     else t.textContent = "訂單總金額：" + fmtMoney(total);
   }
+}
+// 待PROCESS 預取（2026-11-27）：核實面板一出就喺背景問 Worker 每款可扣幾多，
+// 等用戶慢慢核對金額嗰陣已經攞定，提交嗰下唔使等。數量／門店改咗就重新預取。
+var prefetchedAllow = null;
+var prefetchAllowInFlight = false;
+function allowKeyForVerify(){
+  if (!verifyLines) return "";
+  return (getRecordsShop() || "") + "|" + verifyLines.map(function(ln){ return ln.code + ":" + ln.qty + ":" + (ln.promoFreeQty || 0); }).join(",");
+}
+function prefetchStockAllow(){
+  if (!verifyLines || !verifyLines.length || !getRecordsShop()) return;
+  if (prefetchAllowInFlight) return;
+  var key = allowKeyForVerify();
+  if (prefetchedAllow && prefetchedAllow.key === key && Date.now() - prefetchedAllow.at < 300000) return;
+  var lines = [];
+  verifyLines.forEach(function(ln){
+    var paid = ln.qty - (ln.promoFreeQty || 0);
+    if (paid > 0) lines.push({ product: ln.name, productCode: ln.code, qty: paid });
+    if (paid <= 0 && (ln.promoFreeQty || 0) > 0) lines.push({ product: ln.name, productCode: ln.code, qty: ln.promoFreeQty });
+  });
+  if (!lines.length) return;
+  prefetchAllowInFlight = true;
+  var store = getRecordsShop();
+  fetch(SALES_WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "stockAllow", store: store, lines: lines }) })
+    .then(function(res){ return res.json(); })
+    .then(function(j){
+      prefetchAllowInFlight = false;
+      if (j && j.ok && Array.isArray(j.lines)) {
+        var map = {};
+        j.lines.forEach(function(a){ map[String(a.product).trim()] = a; });
+        prefetchedAllow = { key: key, store: store, map: map, at: Date.now() };
+      }
+    })
+    .catch(function(){ prefetchAllowInFlight = false; });
 }
 function cartMatchesVerify(){
   var items = cartItems();
@@ -1227,7 +1262,7 @@ function prefetchWorkerOrderNo(){
   });
 }
 // 訂單狀態歸一：只認「待確認」／「已確認」／「已取消」，其他／冇就預設「已確認」（向後兼容）。
-function normStatus(s){ return (s === "待確認" || s === "已確認" || s === "已取消") ? s : "已確認"; }
+function normStatus(s){ return (s === "待確認" || s === "已確認" || s === "已取消" || s === "待PROCESS") ? s : "已確認"; }
 // 一行本地記錄轉做 Worker 收嘅 line 格式；唔合規格返 null（提交／編輯同步共用）
 function recordToLine(r){
   if (!r) return null;
@@ -1410,6 +1445,16 @@ function confirmVerifiedSubmit(status){
       orderNo = nextOrderNo();
     }
     var meta = { time: time, store: getRecordsShop(), name: "", phone: "", date: "", time2: "", remarks: "" };
+    // 待PROCESS 分行（2026-11-27）：用核實面板嗰陣背景預取返嚟嘅可扣數量（prefetchedAllow）。
+    // 有貨嗰部分即扣，唔夠嗰部分開多行待PROCESS，備註「未收貨，待 admin check」，暫唔扣庫存。
+    // 未預取到／數量改咗未更新，就照舊成行已確認（Worker cap 會擋，唔會靜靜哋超扣）；
+    // 提交本身唔等 Worker，樂觀提交照舊即刻完成。
+    var allowMap = null, allowByProduct = {};
+    if (submitStatus === "已確認" && prefetchedAllow && prefetchedAllow.store === meta.store && prefetchedAllow.key === allowKeyForVerify() && Date.now() - prefetchedAllow.at < 300000) {
+      allowMap = prefetchedAllow.map;
+      allowByProduct = prefetchedAllow.map;
+    }
+    var pendingQtyTotal = 0;
     // 本地記錄淨係存實付行（成行免費嗰款本地冇行，飛書嗰邊有免費行，記錄頁會由飛書讀返）；
     // 成行免費嗰款要另外經 extraLines 傳去 Worker 開免費行（唔經本地記錄）。
     var rows = [], extraLines = [];
@@ -1417,13 +1462,25 @@ function confirmVerifiedSubmit(status){
     lines.forEach(function(l, idx){
       var pl = promoLines[idx];
       if (l.qty > 0) {
-        rows.push({ order: orderNo, time: meta.time, store: meta.store, name: meta.name, phone: meta.phone, date: meta.date, time2: meta.time2, product: l.name, qty: l.qty, price: l.price, subtotal: l.subtotal, orderTotal: total, status: submitStatus, reason: l.reason, remarks: meta.remarks,
-          freeQty: pl.freeQty, unitPrice: pl.unitPrice, promoRule: pl.promoRule, promoType: pl.promoType,
-          giftCode: pl.giftCode || "", giftProduct: pl.giftProduct || "" });
+        var _a = allowMap ? allowByProduct[String(l.name).trim()] : null;
+        var _conf = _a ? _a.confirmed : l.qty;
+        var _pend = _a ? _a.pending : 0;
+        if (_conf > 0) {
+          rows.push({ order: orderNo, time: meta.time, store: meta.store, name: meta.name, phone: meta.phone, date: meta.date, time2: meta.time2, product: l.name, qty: _conf, price: l.price, subtotal: Math.round(_conf * l.price * 100) / 100, orderTotal: total, status: submitStatus, reason: l.reason, remarks: meta.remarks,
+            freeQty: pl.freeQty, unitPrice: pl.unitPrice, promoRule: pl.promoRule, promoType: pl.promoType,
+            giftCode: pl.giftCode || "", giftProduct: pl.giftProduct || "" });
+        }
+        if (_pend > 0) {
+          pendingQtyTotal += _pend;
+          rows.push({ order: orderNo, time: meta.time, store: meta.store, name: meta.name, phone: meta.phone, date: meta.date, time2: meta.time2, product: l.name, qty: _pend, price: l.price, subtotal: Math.round(_pend * l.price * 100) / 100, orderTotal: total, status: "待PROCESS", reason: l.reason, remarks: (meta.remarks ? meta.remarks + " " : "") + "待PROCESS：未收貨，待 admin check",
+            freeQty: _conf > 0 ? 0 : pl.freeQty, unitPrice: pl.unitPrice, promoRule: pl.promoRule, promoType: pl.promoType,
+            giftCode: pl.giftCode || "", giftProduct: pl.giftProduct || "" });
+        }
       } else if (pl.freeQty > 0) {
+        var _fa = allowMap ? allowByProduct[String(l.name).trim()] : null;
         extraLines.push({ order: orderNo, recordDate: _dt[0], recordTime: _dt[1] || "", store: meta.store,
           product: l.name, qty: 0, price: l.price, subtotal: 0, reason: l.reason, remarks: "",
-          status: submitStatus, freeQty: pl.freeQty, giftProduct: l.name, giftProductCode: l.code,
+          status: (_fa && _fa.confirmed <= 0) ? "待PROCESS" : submitStatus, freeQty: pl.freeQty, giftProduct: l.name, giftProductCode: l.code,
           unitPrice: l.price, promoRule: pl.promoRule, promoType: pl.promoType });
       }
     });
@@ -1440,7 +1497,7 @@ function confirmVerifiedSubmit(status){
     var promoSuffix = promoBits.length ? "（優惠：" + promoBits.join("；") + "）" : "";
     if (st) { st.textContent = (submitStatus === "待確認"
       ? "已暫存：新增 " + rows.length + " 行記錄（一個產品一行），訂單編號：" + orderNo + "，訂單總金額：" + fmtMoney(total) + promoSuffix + "，未扣庫存（飛書同步緊…）。之後去訂單記錄頁確認。"
-      : "已提交：新增 " + rows.length + " 行記錄（一個產品一行），訂單編號：" + orderNo + "，訂單總金額：" + fmtMoney(total) + promoSuffix + "（飛書同步緊…）。") + (fromWorker ? "" : "（單號由呢部機發出，Worker 未能派號，之後喺訂單記錄頁會自動同步去飛書。）"); st.className = "status ok"; }
+      : "已提交：新增 " + rows.length + " 行記錄（一個產品一行），訂單編號：" + orderNo + "，訂單總金額：" + fmtMoney(total) + promoSuffix + "（飛書同步緊…）。" + (pendingQtyTotal > 0 ? "其中 " + pendingQtyTotal + " 件待PROCESS（未收貨，待 admin 確認，暫未扣庫存）。" : "")) + (fromWorker ? "" : "（單號由呢部機發出，Worker 未能派號，之後喺訂單記錄頁會自動同步去飛書。）"); st.className = "status ok"; }
     syncSalesToFeishu(rows, st, submitStatus, orderDiscount, extraLines);
     if (st && st.scrollIntoView) st.scrollIntoView();
   } finally {
