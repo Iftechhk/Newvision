@@ -1,7 +1,7 @@
 {
   "source": "BETTEREAT-Feishu-Base",
   "date": "2026-11-27",
-  "generated_at": "2026-11-27T12:43:47+08:00",
+  "generated_at": "2026-11-27T22:52:27+08:00",
   "records": [
     {
       "store": "Aeon (MKH)",
@@ -11,8 +11,8 @@
       "allocated_pans": 1.0,
       "no_of_pcs": 18,
       "remaining_pcs": null,
-      "sold_pcs": 14,
-      "amount": null
+      "sold_pcs": 20,
+      "amount": 418.0
     },
     {
       "store": "Aeon (MKH)",
@@ -132,7 +132,7 @@
       "allocated_pans": 20.0,
       "no_of_pcs": 20,
       "remaining_pcs": null,
-      "sold_pcs": 1,
+      "sold_pcs": 6,
       "amount": null
     },
     {
@@ -156,6 +156,28 @@
       "remaining_pcs": null,
       "sold_pcs": 4,
       "amount": null
+    },
+    {
+      "store": "將軍澳 (MMCP)",
+      "product_code": "P-001",
+      "product_name": "驢打滾",
+      "unit": "盤",
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
+      "remaining_pcs": null,
+      "sold_pcs": 8,
+      "amount": 176.0
+    },
+    {
+      "store": "將軍澳 (MMCP)",
+      "product_code": "P-002",
+      "product_name": "白糖糕",
+      "unit": "盤",
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
+      "remaining_pcs": null,
+      "sold_pcs": 1,
+      "amount": 11.0
     },
     {
       "store": "將軍澳 (MMCP)",
@@ -299,6 +321,17 @@
       "remaining_pcs": null,
       "sold_pcs": 1,
       "amount": null
+    },
+    {
+      "store": "謝斐 (MJF)",
+      "product_code": "P-001",
+      "product_name": "驢打滾",
+      "unit": "盤",
+      "allocated_pans": 1.0,
+      "no_of_pcs": 18,
+      "remaining_pcs": null,
+      "sold_pcs": 12,
+      "amount": 198.0
     },
     {
       "store": "謝斐 (MJF)",
@@ -20814,8 +20847,8 @@
         "allocated_pans": 1.0,
         "no_of_pcs": 18,
         "remaining_pcs": null,
-        "sold_pcs": 14,
-        "amount": null
+        "sold_pcs": 20,
+        "amount": 418.0
       },
       {
         "store": "Aeon (MKH)",
@@ -20935,7 +20968,7 @@
         "allocated_pans": 20.0,
         "no_of_pcs": 20,
         "remaining_pcs": null,
-        "sold_pcs": 1,
+        "sold_pcs": 6,
         "amount": null
       },
       {
@@ -20959,6 +20992,28 @@
         "remaining_pcs": null,
         "sold_pcs": 4,
         "amount": null
+      },
+      {
+        "store": "將軍澳 (MMCP)",
+        "product_code": "P-001",
+        "product_name": "驢打滾",
+        "unit": "盤",
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
+        "remaining_pcs": null,
+        "sold_pcs": 8,
+        "amount": 176.0
+      },
+      {
+        "store": "將軍澳 (MMCP)",
+        "product_code": "P-002",
+        "product_name": "白糖糕",
+        "unit": "盤",
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
+        "remaining_pcs": null,
+        "sold_pcs": 1,
+        "amount": 11.0
       },
       {
         "store": "將軍澳 (MMCP)",
@@ -21102,6 +21157,17 @@
         "remaining_pcs": null,
         "sold_pcs": 1,
         "amount": null
+      },
+      {
+        "store": "謝斐 (MJF)",
+        "product_code": "P-001",
+        "product_name": "驢打滾",
+        "unit": "盤",
+        "allocated_pans": 1.0,
+        "no_of_pcs": 18,
+        "remaining_pcs": null,
+        "sold_pcs": 12,
+        "amount": 198.0
       },
       {
         "store": "謝斐 (MJF)",
