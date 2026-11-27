@@ -341,7 +341,16 @@ function syncLocalStatusFromFeishu(){
   if (!feishuRows.length) return;
   var arr = loadRecords();
   var changed = false;
+  // 雙向對帳（2026-11-27）：飛書有嘅行，本地要認返（掛上 feishuId），以後唔再當佢未同步；
+  // 同一個單號＋產品＋門店＋日期＋數量＋單價出現兩次或以上，係同一張單重複提交，只留第一行
+  // （單號本身就係身份：唔同嘅單一定唔同號，見訂購頁雙向派號）。
+  var seen = {};
+  var deduped = [];
   arr.forEach(function(lr){
+    var dk = [lr.order || "", lr.product || "", lr.store || "", splitRecordTime(lr.time).date || "", lr.qty, lr.price].join(" ");
+    if (seen[dk]) { changed = true; return; }
+    seen[dk] = true;
+    deduped.push(lr);
     var match = null, i;
     if (lr.feishuId) {
       for (i = 0; i < feishuRows.length; i++) { if (feishuRows[i].feishuId === lr.feishuId) { match = feishuRows[i]; break; } }
@@ -351,11 +360,12 @@ function syncLocalStatusFromFeishu(){
       for (i = 0; i < feishuRows.length; i++) { if (localRowKey(feishuRows[i]) === lk) { match = feishuRows[i]; break; } }
     }
     if (match) {
+      if (!lr.feishuId && match.feishuId) { lr.feishuId = match.feishuId; changed = true; }
       var s = rowStatus(match);
       if (rowStatus(lr) !== s) { lr.status = s; changed = true; }
     }
   });
-  if (changed) saveRecords(arr);
+  if (changed) saveRecords(deduped);
 }
 function removeLocalMirror(feishuId){
   if (!feishuId) return;

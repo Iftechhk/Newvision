@@ -452,6 +452,34 @@ function scrollToCart(){
 var RECORDS_KEY = "bettereat_order_records";
 var RECORDS_SHOP_KEY = "bettereat_records_shop";
 var ORDER_SEQ_KEY = "bettereat_order_seq";
+// 純掃描：呢間店今日喺本地記錄入面用過嘅最大序號（唔計 ORDER_SEQ_KEY 計數器，唔改任何嘢）。
+// 計數器會預先寫入 Worker 派咗但未用嘅號（預取嗰陣寫），所以判斷 Worker 號可唔可以用嗰陣
+// 只可以睇真正用咗嘅記錄，唔可以睇計數器——否則 Worker 啱啱派嘅 -005 會被自己個計數器擋住。
+function localMaxRecordSeq(shop, ymd){
+  var code = (shop && SHOP_CODES[shop]) ? SHOP_CODES[shop] : "";
+  var max = 0;
+  try {
+    var recs = loadRecords();
+    for (var i = 0; i < recs.length; i++) {
+      var m = String(recs[i].order || "").match(/^B([A-Z]{3,4})(\d{8})-(\d{3})$/);
+      if (m && m[1] === code && m[2] === ymd) { var s = parseInt(m[3], 10); if (s > max) max = s; }
+    }
+  } catch (e) {}
+  return max;
+}
+// 純掃描：呢間店今日用過嘅最大序號（計數器＋本地記錄兩邊取大；唔改任何嘢）。
+function localMaxOrderSeq(shop, ymd){
+  var code = (shop && SHOP_CODES[shop]) ? SHOP_CODES[shop] : "";
+  var max = 0;
+  try {
+    var raw = localStorage.getItem(ORDER_SEQ_KEY);
+    var obj = raw ? JSON.parse(raw) : null;
+    if (obj && obj.date === ymd && obj.shop === code && obj.seq) max = obj.seq;
+  } catch (e) {}
+  var rs = localMaxRecordSeq(shop, ymd);
+  if (rs > max) max = rs;
+  return max;
+}
 function nextOrderNo(){
   var d = new Date();
   var ymd = d.getFullYear() + ("0" + (d.getMonth() + 1)).slice(-2) + ("0" + d.getDate()).slice(-2);
@@ -460,13 +488,12 @@ function nextOrderNo(){
   // 每部裝置各自計，撞號先搞到飛書改價會掂埋其他店嗰行）。舊格式嘅記錄照舊可以編輯／刪除。
   // 2026-11-17 起，提交嗰陣優先由 Worker 派號（requestWorkerOrderNo，以飛書做準，唔同裝置唔會再撞號）；
   // 呢個本機 nextOrderNo() 只係 Worker 唔得嗰陣嘅後備，同一日同一間店用多部裝置仍有可能撞號。
+  // 雙向派號（2026-11-27）：本地未同步行可能已經用咗更大嘅序號，唔可以只睇計數器；
+  // 取計數器同本地記錄兩邊最大嗰個 +1，唔好再重用已用過嘅號。
   var shop = getRecordsShop();
   var code = (shop && SHOP_CODES[shop]) ? SHOP_CODES[shop] : "";
-  var seq = 1;
+  var seq = localMaxOrderSeq(shop, ymd) + 1;
   try {
-    var raw = localStorage.getItem(ORDER_SEQ_KEY);
-    var obj = raw ? JSON.parse(raw) : null;
-    if (obj && obj.date === ymd && obj.shop === code && obj.seq) seq = obj.seq + 1;
     localStorage.setItem(ORDER_SEQ_KEY, JSON.stringify({ date: ymd, shop: code, seq: seq }));
   } catch (e) {}
   return "B" + code + ymd + "-" + ("00" + seq).slice(-3);
@@ -1152,10 +1179,15 @@ function requestWorkerOrderNo(store){
       var code = (store && SHOP_CODES[store]) ? SHOP_CODES[store] : "";
       if (j && j.ok && typeof j.order === "string" && new RegExp("^B" + code + "\\d{8}-\\d{3}$").test(j.order)) {
         // Worker 派咗嘅號寫返入本機計數器，等之後萬一 Worker 唔得、跌返本機派號嗰陣唔會倒退重用舊號。
+        // 雙向派號：計數器只可以向前，唔可以倒退（例如本地已用 -005，Worker 仲派 -004 嗰陣唔可以寫返 4）。
         try {
           var seq = parseInt(j.order.slice(-3), 10);
           var ymd = (typeof j.date === "string" && /^\d{8}$/.test(j.date)) ? j.date : j.order.slice(4, 12);
-          if (seq >= 1) localStorage.setItem(ORDER_SEQ_KEY, JSON.stringify({ date: ymd, shop: code, seq: seq }));
+          if (seq >= 1) {
+            var cur = null;
+            try { cur = JSON.parse(localStorage.getItem(ORDER_SEQ_KEY) || "null"); } catch (e2) {}
+            if (!cur || cur.date !== ymd || cur.shop !== code || seq > cur.seq) localStorage.setItem(ORDER_SEQ_KEY, JSON.stringify({ date: ymd, shop: code, seq: seq }));
+          }
         } catch (e) {}
         finish(j.order);
       } else finish(null);
@@ -1364,8 +1396,19 @@ function confirmVerifiedSubmit(status){
   try {
     var workerNo = prefetchedOrderNo; prefetchedOrderNo = null;
     prefetchWorkerOrderNo(); // 即刻為下一單預取號
+    // 雙向派號（2026-11-27）：Worker 號只睇飛書，未同步嘅本地行可能已經用咗同一個號
+    // （-004 卡住就係咁嚟）；Worker 號嘅序號大過本地記錄最大先用佢，否則用本地下一個號。
+    // 注意：呢度只可以同本地「記錄」比較，唔可以同計數器比較——預取嗰陣已經將 Worker 號寫入計數器。
     var orderNo = workerNo, fromWorker = !!workerNo;
-    if (!orderNo) orderNo = nextOrderNo();
+    var _ymd = time.split(" ")[0].replace(/-/g, "");
+    var _lseq = localMaxRecordSeq(getRecordsShop(), _ymd);
+    if (orderNo) {
+      var _wm = orderNo.match(/-(\d{3})$/);
+      var _wseq = _wm ? parseInt(_wm[1], 10) : 0;
+      if (_wseq <= _lseq) { orderNo = nextOrderNo(); fromWorker = false; }
+    } else {
+      orderNo = nextOrderNo();
+    }
     var meta = { time: time, store: getRecordsShop(), name: "", phone: "", date: "", time2: "", remarks: "" };
     // 本地記錄淨係存實付行（成行免費嗰款本地冇行，飛書嗰邊有免費行，記錄頁會由飛書讀返）；
     // 成行免費嗰款要另外經 extraLines 傳去 Worker 開免費行（唔經本地記錄）。
