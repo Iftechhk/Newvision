@@ -1227,7 +1227,8 @@ function recordToLine(r){
     status: normStatus(r.status),
     // 待扣數（2026-11-28）：Worker 寫入飛書「待扣數」欄用。待PROCESS 行 = 數量（成行未扣），
     // 其他行 = 0（今次提交會扣晒）。
-    pendingQty: (normStatus(r.status) === "待PROCESS") ? q : 0,
+    // （2026-11-29：待收貨行（pendingReceipt）改以待PROCESS 入飛書嗰陣，待扣數 = -數量。）
+    pendingQty: (normStatus(r.status) === "待PROCESS") ? ((r.pendingReceipt || (typeof r.pendingQty === "number" && r.pendingQty < 0)) ? -q : q) : 0,
     // 優惠：freeQty 係送嘅件數（$0 行），unitPrice 係折後單價（同 price 一致），
     // promoRule/promoType 係邊條規則生效；冇優惠嗰陣 freeQty 0、promoRule/promoType 空字串。
     // 2026-11-18 最平免費：贈品一定係本行產品（giftProduct／giftCode = 本行產品），
@@ -1298,7 +1299,8 @@ function updateSubmitStatusOrder(orderNo){
     if (t.indexOf("訂單編號派緊…") >= 0) st.textContent = t.replace("訂單編號派緊…", orderNo ? ("訂單編號：" + orderNo) : "訂單編號未派出");
   } catch (e) {}
 }
-// 2026-11-28：因為庫存唔夠而同步唔到嘅行，標做「待收貨」——唔係失敗，係等收貨，唔會強行傳送去飛書。
+// 2026-11-28：因為庫存唔夠而同步唔到嘅行，標做「待收貨」——唔係失敗，係等收貨。
+// （2026-11-29：之後喺訂單記錄頁再同步嗰陣會傳送去飛書做待PROCESS，待扣數 = -數量。）
 // 只標「已確認」行；同一單嘅「待PROCESS」行本身唔扣庫存，唔係佢哋卡住。
 function markRowsPendingReceipt(rows){
   var arr = loadRecords();
@@ -1366,10 +1368,10 @@ function syncSalesToFeishu(rows, statusEl, status, orderDiscount, extraLines){
   }
   // 2026-11-28：cap 拒絕唔再淨係留喺部機——將卡住嘅已確認行改以「待PROCESS」再交一次
   // （同一個 clientRef，Worker 會用返同一個單號；待PROCESS 行唔扣庫存、唔做 cap 檢查，
-  // 所以一定入到飛書，待扣數＝數量，admin 喺飛書睇到先確認收貨再扣數）。
+  // 所以一定入到飛書，待扣數＝數量（待收貨行＝-數量），admin 喺飛書睇到先確認收貨再扣數）。
   var procResubmitted = false;
   function resubmitAsProcess(){
-    if (procResubmitted) { markRowsPendingReceipt(rows); finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置（標做「待收貨」，唔會傳送去飛書）。"); return; }
+    if (procResubmitted) { markRowsPendingReceipt(rows); finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置（標做「待收貨」，之後喺訂單記錄頁會傳送去飛書做「待PROCESS」，待扣數係負數）。"); return; }
     procResubmitted = true;
     var procRows = [];
     var changed = false;
@@ -1386,7 +1388,7 @@ function syncSalesToFeishu(rows, statusEl, status, orderDiscount, extraLines){
         procRows.push(r);
       }
     });
-    if (!changed) { markRowsPendingReceipt(rows); finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置（標做「待收貨」，唔會傳送去飛書）。"); return; }
+    if (!changed) { markRowsPendingReceipt(rows); finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置（標做「待收貨」，之後喺訂單記錄頁會傳送去飛書做「待PROCESS」，待扣數係負數）。"); return; }
     var procLines = [];
     procRows.forEach(function(r){ var ln = recordToLine(r); if (ln) procLines.push(ln); });
     // extraLines（贈品／滿減）：已確認嗰啲都轉埋待PROCESS（贈品行會扣庫存，唔轉會再撞 cap）。
@@ -1401,7 +1403,7 @@ function syncSalesToFeishu(rows, statusEl, status, orderDiscount, extraLines){
       return l;
     });
     var allProc = procLines.concat(procExtra);
-    if (!allProc.length) { markRowsPendingReceipt(rows); finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置（標做「待收貨」，唔會傳送去飛書）。"); return; }
+    if (!allProc.length) { markRowsPendingReceipt(rows); finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置（標做「待收貨」，之後喺訂單記錄頁會傳送去飛書做「待PROCESS」，待扣數係負數）。"); return; }
     var body2 = { action: "submit", lines: allProc, orderDiscount: orderDiscount || null, clientRef: clientRef };
     if (orderNoKnown) body2.order = orderNoKnown;
     var ctrl2 = null, timer2 = null;
@@ -1417,12 +1419,12 @@ function syncSalesToFeishu(rows, statusEl, status, orderDiscount, extraLines){
         finish("已同步去飛書「銷售紀錄」做「待PROCESS」（" + allProc.length + " 行，待扣數已入飛書）。呢單因為庫存唔夠，等門店確認收貨後由 admin 確認扣數。");
       } else {
         markRowsPendingReceipt(rows);
-        finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置（標做「待收貨」，唔會傳送去飛書）。");
+        finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置（標做「待收貨」，之後喺訂單記錄頁會傳送去飛書做「待PROCESS」，待扣數係負數）。");
       }
     }).catch(function(){
       if (timer2) clearTimeout(timer2);
       markRowsPendingReceipt(rows);
-      finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置（標做「待收貨」，唔會傳送去飛書）。");
+      finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置（標做「待收貨」，之後喺訂單記錄頁會傳送去飛書做「待PROCESS」，待扣數係負數）。");
     });
   }
   // ⚠️ 2026-11-17 修正：舊版 recordToLine 只接受舊格式 B20261106-002，新格式 BMJF20261106-002

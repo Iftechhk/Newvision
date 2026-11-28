@@ -191,7 +191,7 @@
     <button class="xbtn" id="resyncBtn" onclick="resyncUnsynced()" disabled>重新同步全部未同步</button>
     <button class="xbtn" id="clearUnsyncedBtn" onclick="clearUnsyncedRecords()" disabled>清除未同步記錄</button>
     <button class="xbtn" id="clearRecordsBtn" onclick="clearRecords()">清空全部記錄</button>
-    <div style="font-size:13px;color:#71879a;line-height:1.7;">記錄而家係由飛書「銷售紀錄」表讀返嚟，任何一部機登入都睇到晒所有店嘅單，唔再淨係得呢部機先睇到。記錄係喺訂購頁確認提交嗰陣生成，一個產品一行，同一次提交嘅各行會共用同一個訂單編號，同時即刻傳送去飛書「銷售紀錄」表。喺呢頁可以撳「編輯」改單價、數量同原因，或者撳「刪除」刪走一行；改動會即刻同步去飛書「銷售紀錄」，如果同步失敗，記錄仍然會存喺呢部裝置，下次再改同一行會再試同步。上面可以揀睇邊間店嘅記錄，一間店嘅記錄獨立顯示。入頁嗰陣未同步嘅行會自動同步去飛書，唔使逐行撳；如果自動同步失敗，可以撳「重新同步全部未同步」再試。未同步嘅行唔會顯示喺下面個表（因為庫存唔夠而待收貨嘅行除外，會顯示做「待收貨」，唔會傳送去飛書），入咗飛書先至出現。如果有行係多出嚟、唔應該入飛書，撳「清除未同步記錄」清走佢哋，佢哋唔會再傳送去飛書。登入嗰陣揀邊間店，記錄就睇邊間店；管理員登入可以睇晒全部店。「清空」只會清呢部裝置嘅本地記錄，唔會刪除飛書嘅數據。</div>
+    <div style="font-size:13px;color:#71879a;line-height:1.7;">記錄而家係由飛書「銷售紀錄」表讀返嚟，任何一部機登入都睇到晒所有店嘅單，唔再淨係得呢部機先睇到。記錄係喺訂購頁確認提交嗰陣生成，一個產品一行，同一次提交嘅各行會共用同一個訂單編號，同時即刻傳送去飛書「銷售紀錄」表。喺呢頁可以撳「編輯」改單價、數量同原因，或者撳「刪除」刪走一行；改動會即刻同步去飛書「銷售紀錄」，如果同步失敗，記錄仍然會存喺呢部裝置，下次再改同一行會再試同步。上面可以揀睇邊間店嘅記錄，一間店嘅記錄獨立顯示。入頁嗰陣未同步嘅行會自動同步去飛書，唔使逐行撳；如果自動同步失敗，可以撳「重新同步全部未同步」再試。未同步嘅行唔會顯示喺下面個表（因為庫存唔夠而待收貨嘅行除外，會顯示做「待收貨」，之後會傳送去飛書做「待PROCESS」，待扣數係負數），入咗飛書先至出現。如果有行係多出嚟、唔應該入飛書，撳「清除未同步記錄」清走佢哋，佢哋唔會再傳送去飛書。登入嗰陣揀邊間店，記錄就睇邊間店；管理員登入可以睇晒全部店。「清空」只會清呢部裝置嘅本地記錄，唔會刪除飛書嘅數據。</div>
   </div>
   <div class="foot">數據來源：BETTEREAT 飛書系統 · 餐牌以飛書產品主檔為準</div>
 </div>
@@ -227,7 +227,7 @@ function statusBadge(r){
   return '<span class="statusbadge ' + cls + '">' + esc(s) + '</span>';
 }
 // 2026-11-28：待收貨行嘅顯示狀態——狀態欄顯示「待收貨」。
-// 標記只係顯示用（pendingReceipt 旗），唔會寫入飛書；入咗飛書嗰陣標記清走。
+// 標記係顯示＋傳送用（pendingReceipt 旗）：入飛書做待PROCESS 嗰陣待扣數 = -數量；入咗飛書嗰陣標記清走。
 function displayStatus(r){ return (r && r.pendingReceipt) ? "待收貨" : rowStatus(r); }
 // 2026-11-28：待扣數——呢行有幾多件未扣庫存（唔夠數嗰部分）。
 // 飛書真欄位優先：Worker 寫返嚟嘅數最準（扣咗幾多、清咗幾多都係嗰個數）。
@@ -237,8 +237,9 @@ function displayStatus(r){ return (r && r.pendingReceipt) ? "待收貨" : rowSta
 // 其他行（已確認／已取消／待確認）：冇待扣數，留空。
 function pendingDeductQty(r){
   if (!r) return "";
-  // 飛書真欄位：有數就用佢（> 0 先係有待扣數；0 即係已扣晒／留空）。
-  if (typeof r.pendingQty === "number" && isFinite(r.pendingQty) && r.pendingQty > 0) return r.pendingQty;
+  // 飛書真欄位：有數就用佢（≠ 0 先係有待扣數，正數＝待PROCESS 未扣，負數＝待收貨未扣；
+  // 0 即係已扣晒／留空）。
+  if (typeof r.pendingQty === "number" && isFinite(r.pendingQty) && r.pendingQty !== 0) return r.pendingQty;
   var q = (r.qty !== undefined && r.qty !== null && r.qty !== "") ? r.qty : "";
   if (r.pendingReceipt) return q;
   if (rowStatus(r) === "待PROCESS") return q;
@@ -473,7 +474,7 @@ function renderRecords(){
   var unsyncedCount = pairs.filter(function(p){ return p.unsynced; }).length;
   // 2026-11-28：未同步行唔顯示喺表——未入飛書，顯示出嚟會撈亂（冇單號、狀態唔係真）。
   // 佢哋仲喺 outbox：入頁自動同步／「重新同步全部未同步」照樣處理，入咗飛書先至出現。
-  // 例外：因為庫存唔夠而標做「待收貨」嘅行會顯示（狀態＋備註都話明待收貨，唔會傳送去飛書），
+  // 例外：因為庫存唔夠而標做「待收貨」嘅行會顯示（狀態＋備註都話明待收貨，佢哋會傳送去飛書做待PROCESS，待扣數係負數），
   // 等大家知嗰單係等收貨，唔係唔見咗。
   // lastShownPairs 照舊包埋佢哋，di 先至唔會錯位，自動同步先至搵到佢哋。
   var shownPairs = pairs.filter(function(p){ return !p.unsynced || (p.r && p.r.pendingReceipt); });
@@ -732,8 +733,10 @@ function recordToLine(r){
     // 狀態照跟返行本身（編輯一待確認行唔會靜靜哋變已確認）；冇就預設「已確認」。
     status: normStatus(r.status),
     // 待扣數（2026-11-28）：Worker 寫入飛書「待扣數」欄用。待PROCESS 行 = 數量（成行未扣），
-    // 其他行 = 0（今次提交會扣晒）。本地待收貨行都係 0——佢哋今次交得入就係扣晒先至入到。
-    pendingQty: (normStatus(r.status) === "待PROCESS") ? q : 0
+    // 其他行 = 0（今次提交會扣晒）。本地待收貨行第一交（已確認）都係 0——交得入就係扣晒先至入到。
+    // （2026-11-29：待收貨行改以待PROCESS 入飛書嗰陣，待扣數 = -數量——行本身帶 pendingReceipt
+    // 旗，或者飛書讀返嚟嗰行 pendingQty 已經係負數，改數量嗰陣都要跟返負數。）
+    pendingQty: (normStatus(r.status) === "待PROCESS") ? ((r.pendingReceipt || (typeof r.pendingQty === "number" && r.pendingQty < 0)) ? -q : q) : 0
   };
 }
 // 編輯記錄之後（改價／改數量／改原因），將改好嗰行即刻 POST 去 Worker 更新飛書「銷售紀錄」嗰行。
@@ -865,7 +868,8 @@ function groupRowsStillInOutbox(group){
 }
 
 // 2026-11-28：因為庫存唔夠而同步唔到嘅行，標做「待收貨」——唔係失敗，係等收貨。
-// 標記（pendingReceipt）存喺本地行；顯示嗰陣狀態＋備註都會話明「待收貨」，唔會強行傳送去飛書。
+// 標記（pendingReceipt）存喺本地行；顯示嗰陣狀態＋備註都會話明「待收貨」。
+// （2026-11-29：下次同步嗰陣會傳送去飛書做待PROCESS，待扣數 = -數量，唔會再留喺部機。）
 // 只標「已確認」行：同一單入面嘅「待PROCESS」行本身唔扣庫存，唔係佢哋卡住。
 // 入咗飛書之後標記自動清走（applyOrderRecordIds／syncLocalStatusFromFeishu 嗰陣）。
 function markPairsPendingReceipt(pairs){
@@ -948,7 +952,7 @@ function syncOutboxGroup(group){
         if (!j.alreadyDone || !j.linesHashMismatch) applyOrderRecordIds(group, lineRows, j.recordIds || [], orderNo);
         return true;
       }
-      // stock_below_cap：唔重試原樣，改以「待PROCESS」再交一次，等佢入飛書（待扣數＝數量），
+      // stock_below_cap：唔重試原樣，改以「待PROCESS」再交一次，等佢入飛書（待扣數＝數量；待收貨行就係 -數量），
       // admin 喺飛書睇到先確認收貨再扣數。再交都唔得先退返標「待收貨」。
       if (j && j.error === "stock_below_cap") return resubmitGroupAsProcess();
       return false;
@@ -959,7 +963,8 @@ function syncOutboxGroup(group){
     });
   }
   // 2026-11-28：cap 拒絕嗰陣改以「待PROCESS」再交一次（同一個 clientRef，Worker 會用返
-  // 同一個單號；待PROCESS 行唔扣庫存、唔做 cap 檢查，所以一定入到飛書，待扣數＝數量）。
+  // 同一個單號；待PROCESS 行唔扣庫存、唔做 cap 檢查，所以一定入到飛書，待扣數＝數量，
+  // 待收貨行待扣數＝-數量）。
   // 返 Promise<boolean>：true = 已入飛書做待PROCESS，false = 仲未入（退返標「待收貨」）。
   function resubmitGroupAsProcess(){
     var procRows = [];
@@ -1066,10 +1071,10 @@ function maybeAutoSyncUnsynced(){
         st.textContent = "已自動同步 " + okCount + " 行去飛書，重新載入緊記錄…";
         st.className = "status ok";
       } else {
-        // 2026-11-28：因為庫存唔夠而標做「待收貨」嘅行，話明佢哋唔會傳送去飛書，等收貨先過到。
+        // 2026-11-28：因為庫存唔夠而標做「待收貨」嘅行，話明佢哋會傳送去飛書做待PROCESS（待扣數係負數），等門店確認收貨後由 admin 確認扣數。
         var shop = getRecordsShop();
         var pendCount = loadRecords().filter(function(r){ return r && r.pendingReceipt && !r.feishuId && (!shop || r.store === shop); }).length;
-        st.textContent = "已自動同步 " + okCount + "／" + pairs.length + " 行，其餘 " + (pairs.length - okCount) + " 行仍然留喺呢部裝置" + (pendCount ? "（其中 " + pendCount + " 行因為庫存唔夠標做「待收貨」，唔會傳送去飛書，等門店確認收貨先過到）" : "");
+        st.textContent = "已自動同步 " + okCount + "／" + pairs.length + " 行，其餘 " + (pairs.length - okCount) + " 行仍然留喺呢部裝置" + (pendCount ? "（其中 " + pendCount + " 行因為庫存唔夠標做「待收貨」，會傳送去飛書做「待PROCESS」，待扣數係負數，等門店確認收貨後由 admin 確認扣數）" : "");
         st.className = "status err";
       }
     }
@@ -1121,10 +1126,10 @@ function resyncUnsynced(){
         st.textContent = "已重新同步全部 " + okCount + " 行去飛書，重新載入緊記錄…";
         st.className = "status ok";
       } else {
-        // 2026-11-28：因為庫存唔夠而標做「待收貨」嘅行，話明佢哋唔會傳送去飛書，等收貨先過到。
+        // 2026-11-28：因為庫存唔夠而標做「待收貨」嘅行，話明佢哋會傳送去飛書做待PROCESS（待扣數係負數），等門店確認收貨後由 admin 確認扣數。
         var shop = getRecordsShop();
         var pendCount = loadRecords().filter(function(r){ return r && r.pendingReceipt && !r.feishuId && (!shop || r.store === shop); }).length;
-        st.textContent = "已重新同步 " + okCount + "／" + pairs.length + " 行，其餘仍然留喺呢部裝置，稍後可以再試。" + (pendCount ? "（其中 " + pendCount + " 行因為庫存唔夠標做「待收貨」，唔會傳送去飛書，等門店確認收貨先過到）" : "");
+        st.textContent = "已重新同步 " + okCount + "／" + pairs.length + " 行，其餘仍然留喺呢部裝置，稍後可以再試。" + (pendCount ? "（其中 " + pendCount + " 行因為庫存唔夠標做「待收貨」，會傳送去飛書做「待PROCESS」，待扣數係負數，等門店確認收貨後由 admin 確認扣數）" : "");
         st.className = "status err";
       }
     }
