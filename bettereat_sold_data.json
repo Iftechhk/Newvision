@@ -1,18 +1,18 @@
 {
   "source": "BETTEREAT-Feishu-Base",
   "date": "2026-11-28",
-  "generated_at": "2026-11-28T00:09:51+08:00",
+  "generated_at": "2026-11-28T23:11:02+08:00",
   "records": [
     {
       "store": "Aeon (MKH)",
       "product_code": "P-001",
       "product_name": "驢打滾",
       "unit": "盤",
-      "allocated_pans": 1.0,
-      "no_of_pcs": 18,
+      "allocated_pans": 12.0,
+      "no_of_pcs": 216,
       "remaining_pcs": null,
-      "sold_pcs": 20,
-      "amount": null
+      "sold_pcs": 24,
+      "amount": 506.0
     },
     {
       "store": "Aeon (MKH)",
@@ -22,8 +22,8 @@
       "allocated_pans": 0.0,
       "no_of_pcs": 0,
       "remaining_pcs": null,
-      "sold_pcs": 17,
-      "amount": null
+      "sold_pcs": 18,
+      "amount": 198.0
     },
     {
       "store": "Aeon (MKH)",
@@ -33,16 +33,16 @@
       "allocated_pans": 0.0,
       "no_of_pcs": 0,
       "remaining_pcs": null,
-      "sold_pcs": 24,
-      "amount": null
+      "sold_pcs": 25,
+      "amount": 72.0
     },
     {
       "store": "Aeon (MKH)",
       "product_code": "P-004",
       "product_name": "啡色紅豆砵仔糕",
       "unit": "盤",
-      "allocated_pans": 1.5,
-      "no_of_pcs": 24,
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
       "remaining_pcs": null,
       "sold_pcs": 8,
       "amount": null
@@ -85,8 +85,8 @@
       "product_code": "P-045",
       "product_name": "芒果糯米飯",
       "unit": "盤",
-      "allocated_pans": 2.0,
-      "no_of_pcs": 98,
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
       "remaining_pcs": null,
       "sold_pcs": 1,
       "amount": null
@@ -118,8 +118,8 @@
       "product_code": "P-055",
       "product_name": "木糠布甸",
       "unit": "件",
-      "allocated_pans": 20.0,
-      "no_of_pcs": 20,
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
       "remaining_pcs": null,
       "sold_pcs": 1,
       "amount": null
@@ -129,8 +129,8 @@
       "product_code": "P-056",
       "product_name": "Oreo 布甸",
       "unit": "件",
-      "allocated_pans": 20.0,
-      "no_of_pcs": 20,
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
       "remaining_pcs": null,
       "sold_pcs": 6,
       "amount": null
@@ -140,8 +140,8 @@
       "product_code": "P-057",
       "product_name": "芒果布甸(淨底)",
       "unit": "件",
-      "allocated_pans": 10.0,
-      "no_of_pcs": 10,
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
       "remaining_pcs": null,
       "sold_pcs": 1,
       "amount": null
@@ -151,8 +151,8 @@
       "product_code": "P-058",
       "product_name": "3.6牛奶燉蛋白(淨底)",
       "unit": "件",
-      "allocated_pans": 8.0,
-      "no_of_pcs": 8,
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
       "remaining_pcs": null,
       "sold_pcs": 4,
       "amount": null
@@ -162,8 +162,8 @@
       "product_code": "P-001",
       "product_name": "驢打滾",
       "unit": "盤",
-      "allocated_pans": 0.0,
-      "no_of_pcs": 0,
+      "allocated_pans": 12.0,
+      "no_of_pcs": 216,
       "remaining_pcs": null,
       "sold_pcs": 8,
       "amount": null
@@ -228,8 +228,8 @@
       "product_code": "P-001",
       "product_name": "驢打滾",
       "unit": "盤",
-      "allocated_pans": 0.0,
-      "no_of_pcs": 0,
+      "allocated_pans": 12.0,
+      "no_of_pcs": 216,
       "remaining_pcs": null,
       "sold_pcs": 1,
       "amount": null
@@ -269,6 +269,50 @@
     },
     {
       "store": "淘大 (MAP)",
+      "product_code": "P-024",
+      "product_name": "芒果椰汁西米糕",
+      "unit": "盤",
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
+      "remaining_pcs": null,
+      "sold_pcs": 3,
+      "amount": 22.0
+    },
+    {
+      "store": "淘大 (MAP)",
+      "product_code": "P-030",
+      "product_name": "開心果奶凍糕",
+      "unit": "盤",
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
+      "remaining_pcs": null,
+      "sold_pcs": 1,
+      "amount": 11.0
+    },
+    {
+      "store": "淘大 (MAP)",
+      "product_code": "P-031",
+      "product_name": "彩虹椰汁糕",
+      "unit": "盤",
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
+      "remaining_pcs": null,
+      "sold_pcs": 1,
+      "amount": 11.0
+    },
+    {
+      "store": "淘大 (MAP)",
+      "product_code": "P-032",
+      "product_name": "芝麻糕",
+      "unit": "盤",
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
+      "remaining_pcs": null,
+      "sold_pcs": 1,
+      "amount": 0.0
+    },
+    {
+      "store": "淘大 (MAP)",
       "product_code": "P-049",
       "product_name": "芒果椰汁西米",
       "unit": "杯",
@@ -283,8 +327,8 @@
       "product_code": "P-051",
       "product_name": "芒芒多重奏",
       "unit": "杯",
-      "allocated_pans": 10.0,
-      "no_of_pcs": 10,
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
       "remaining_pcs": null,
       "sold_pcs": 1,
       "amount": null
@@ -294,8 +338,8 @@
       "product_code": "P-053",
       "product_name": "芒果涼粉",
       "unit": "件",
-      "allocated_pans": 10.0,
-      "no_of_pcs": 10,
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
       "remaining_pcs": null,
       "sold_pcs": 1,
       "amount": null
@@ -316,52 +360,85 @@
       "product_code": "P-056",
       "product_name": "Oreo 布甸",
       "unit": "件",
-      "allocated_pans": 10.0,
-      "no_of_pcs": 10,
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
+      "remaining_pcs": null,
+      "sold_pcs": 2,
+      "amount": null
+    },
+    {
+      "store": "淘大 (MAP)",
+      "product_code": "P-057",
+      "product_name": "芒果布甸(淨底)",
+      "unit": "件",
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
       "remaining_pcs": null,
       "sold_pcs": 1,
-      "amount": null
+      "amount": 11.0
+    },
+    {
+      "store": "淘大 (MAP)",
+      "product_code": "P-058",
+      "product_name": "3.6牛奶燉蛋白(淨底)",
+      "unit": "件",
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
+      "remaining_pcs": null,
+      "sold_pcs": 1,
+      "amount": 0.0
     },
     {
       "store": "謝斐 (MJF)",
       "product_code": "P-001",
       "product_name": "驢打滾",
       "unit": "盤",
-      "allocated_pans": 1.0,
-      "no_of_pcs": 18,
+      "allocated_pans": 12.0,
+      "no_of_pcs": 216,
       "remaining_pcs": null,
-      "sold_pcs": 12,
-      "amount": null
+      "sold_pcs": 24,
+      "amount": 440.0
     },
     {
       "store": "謝斐 (MJF)",
       "product_code": "P-002",
       "product_name": "白糖糕",
       "unit": "盤",
-      "allocated_pans": 9.0,
-      "no_of_pcs": 441,
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
       "remaining_pcs": null,
-      "sold_pcs": 7,
-      "amount": null
+      "sold_pcs": 11,
+      "amount": 110.0
     },
     {
       "store": "謝斐 (MJF)",
       "product_code": "P-003",
       "product_name": "紅豆糕",
       "unit": "盤",
-      "allocated_pans": 3.0,
-      "no_of_pcs": 147,
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
+      "remaining_pcs": null,
+      "sold_pcs": 6,
+      "amount": 15.0
+    },
+    {
+      "store": "謝斐 (MJF)",
+      "product_code": "P-004",
+      "product_name": "啡色紅豆砵仔糕",
+      "unit": "盤",
+      "allocated_pans": 0.0,
+      "no_of_pcs": 0,
       "remaining_pcs": null,
       "sold_pcs": 3,
-      "amount": null
+      "amount": 22.0
     },
     {
       "store": "謝斐 (MJF)",
       "product_code": "P-048",
       "product_name": "楊枝金露(大)",
       "unit": "杯",
-      "allocated_pans": 0.0,
-      "no_of_pcs": 0,
+      "allocated_pans": 12.0,
+      "no_of_pcs": 12,
       "remaining_pcs": null,
       "sold_pcs": 1,
       "amount": null
@@ -382,11 +459,22 @@
       "product_code": "P-051",
       "product_name": "芒芒多重奏",
       "unit": "杯",
-      "allocated_pans": 0.0,
-      "no_of_pcs": 0,
+      "allocated_pans": 12.0,
+      "no_of_pcs": 12,
       "remaining_pcs": null,
       "sold_pcs": 1,
       "amount": null
+    },
+    {
+      "store": "謝斐 (MJF)",
+      "product_code": "P-058",
+      "product_name": "3.6牛奶燉蛋白(淨底)",
+      "unit": "件",
+      "allocated_pans": 12.0,
+      "no_of_pcs": 12,
+      "remaining_pcs": null,
+      "sold_pcs": 3,
+      "amount": 22.0
     }
   ],
   "history": {
@@ -21231,11 +21319,11 @@
         "product_code": "P-001",
         "product_name": "驢打滾",
         "unit": "盤",
-        "allocated_pans": 1.0,
-        "no_of_pcs": 18,
+        "allocated_pans": 12.0,
+        "no_of_pcs": 216,
         "remaining_pcs": null,
-        "sold_pcs": 20,
-        "amount": null
+        "sold_pcs": 24,
+        "amount": 506.0
       },
       {
         "store": "Aeon (MKH)",
@@ -21245,8 +21333,8 @@
         "allocated_pans": 0.0,
         "no_of_pcs": 0,
         "remaining_pcs": null,
-        "sold_pcs": 17,
-        "amount": null
+        "sold_pcs": 18,
+        "amount": 198.0
       },
       {
         "store": "Aeon (MKH)",
@@ -21256,16 +21344,16 @@
         "allocated_pans": 0.0,
         "no_of_pcs": 0,
         "remaining_pcs": null,
-        "sold_pcs": 24,
-        "amount": null
+        "sold_pcs": 25,
+        "amount": 72.0
       },
       {
         "store": "Aeon (MKH)",
         "product_code": "P-004",
         "product_name": "啡色紅豆砵仔糕",
         "unit": "盤",
-        "allocated_pans": 1.5,
-        "no_of_pcs": 24,
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
         "remaining_pcs": null,
         "sold_pcs": 8,
         "amount": null
@@ -21308,8 +21396,8 @@
         "product_code": "P-045",
         "product_name": "芒果糯米飯",
         "unit": "盤",
-        "allocated_pans": 2.0,
-        "no_of_pcs": 98,
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
         "remaining_pcs": null,
         "sold_pcs": 1,
         "amount": null
@@ -21341,8 +21429,8 @@
         "product_code": "P-055",
         "product_name": "木糠布甸",
         "unit": "件",
-        "allocated_pans": 20.0,
-        "no_of_pcs": 20,
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
         "remaining_pcs": null,
         "sold_pcs": 1,
         "amount": null
@@ -21352,8 +21440,8 @@
         "product_code": "P-056",
         "product_name": "Oreo 布甸",
         "unit": "件",
-        "allocated_pans": 20.0,
-        "no_of_pcs": 20,
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
         "remaining_pcs": null,
         "sold_pcs": 6,
         "amount": null
@@ -21363,8 +21451,8 @@
         "product_code": "P-057",
         "product_name": "芒果布甸(淨底)",
         "unit": "件",
-        "allocated_pans": 10.0,
-        "no_of_pcs": 10,
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
         "remaining_pcs": null,
         "sold_pcs": 1,
         "amount": null
@@ -21374,8 +21462,8 @@
         "product_code": "P-058",
         "product_name": "3.6牛奶燉蛋白(淨底)",
         "unit": "件",
-        "allocated_pans": 8.0,
-        "no_of_pcs": 8,
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
         "remaining_pcs": null,
         "sold_pcs": 4,
         "amount": null
@@ -21385,8 +21473,8 @@
         "product_code": "P-001",
         "product_name": "驢打滾",
         "unit": "盤",
-        "allocated_pans": 0.0,
-        "no_of_pcs": 0,
+        "allocated_pans": 12.0,
+        "no_of_pcs": 216,
         "remaining_pcs": null,
         "sold_pcs": 8,
         "amount": null
@@ -21451,8 +21539,8 @@
         "product_code": "P-001",
         "product_name": "驢打滾",
         "unit": "盤",
-        "allocated_pans": 0.0,
-        "no_of_pcs": 0,
+        "allocated_pans": 12.0,
+        "no_of_pcs": 216,
         "remaining_pcs": null,
         "sold_pcs": 1,
         "amount": null
@@ -21492,6 +21580,50 @@
       },
       {
         "store": "淘大 (MAP)",
+        "product_code": "P-024",
+        "product_name": "芒果椰汁西米糕",
+        "unit": "盤",
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
+        "remaining_pcs": null,
+        "sold_pcs": 3,
+        "amount": 22.0
+      },
+      {
+        "store": "淘大 (MAP)",
+        "product_code": "P-030",
+        "product_name": "開心果奶凍糕",
+        "unit": "盤",
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
+        "remaining_pcs": null,
+        "sold_pcs": 1,
+        "amount": 11.0
+      },
+      {
+        "store": "淘大 (MAP)",
+        "product_code": "P-031",
+        "product_name": "彩虹椰汁糕",
+        "unit": "盤",
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
+        "remaining_pcs": null,
+        "sold_pcs": 1,
+        "amount": 11.0
+      },
+      {
+        "store": "淘大 (MAP)",
+        "product_code": "P-032",
+        "product_name": "芝麻糕",
+        "unit": "盤",
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
+        "remaining_pcs": null,
+        "sold_pcs": 1,
+        "amount": 0.0
+      },
+      {
+        "store": "淘大 (MAP)",
         "product_code": "P-049",
         "product_name": "芒果椰汁西米",
         "unit": "杯",
@@ -21506,8 +21638,8 @@
         "product_code": "P-051",
         "product_name": "芒芒多重奏",
         "unit": "杯",
-        "allocated_pans": 10.0,
-        "no_of_pcs": 10,
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
         "remaining_pcs": null,
         "sold_pcs": 1,
         "amount": null
@@ -21517,8 +21649,8 @@
         "product_code": "P-053",
         "product_name": "芒果涼粉",
         "unit": "件",
-        "allocated_pans": 10.0,
-        "no_of_pcs": 10,
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
         "remaining_pcs": null,
         "sold_pcs": 1,
         "amount": null
@@ -21539,52 +21671,85 @@
         "product_code": "P-056",
         "product_name": "Oreo 布甸",
         "unit": "件",
-        "allocated_pans": 10.0,
-        "no_of_pcs": 10,
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
+        "remaining_pcs": null,
+        "sold_pcs": 2,
+        "amount": null
+      },
+      {
+        "store": "淘大 (MAP)",
+        "product_code": "P-057",
+        "product_name": "芒果布甸(淨底)",
+        "unit": "件",
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
         "remaining_pcs": null,
         "sold_pcs": 1,
-        "amount": null
+        "amount": 11.0
+      },
+      {
+        "store": "淘大 (MAP)",
+        "product_code": "P-058",
+        "product_name": "3.6牛奶燉蛋白(淨底)",
+        "unit": "件",
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
+        "remaining_pcs": null,
+        "sold_pcs": 1,
+        "amount": 0.0
       },
       {
         "store": "謝斐 (MJF)",
         "product_code": "P-001",
         "product_name": "驢打滾",
         "unit": "盤",
-        "allocated_pans": 1.0,
-        "no_of_pcs": 18,
+        "allocated_pans": 12.0,
+        "no_of_pcs": 216,
         "remaining_pcs": null,
-        "sold_pcs": 12,
-        "amount": null
+        "sold_pcs": 24,
+        "amount": 440.0
       },
       {
         "store": "謝斐 (MJF)",
         "product_code": "P-002",
         "product_name": "白糖糕",
         "unit": "盤",
-        "allocated_pans": 9.0,
-        "no_of_pcs": 441,
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
         "remaining_pcs": null,
-        "sold_pcs": 7,
-        "amount": null
+        "sold_pcs": 11,
+        "amount": 110.0
       },
       {
         "store": "謝斐 (MJF)",
         "product_code": "P-003",
         "product_name": "紅豆糕",
         "unit": "盤",
-        "allocated_pans": 3.0,
-        "no_of_pcs": 147,
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
+        "remaining_pcs": null,
+        "sold_pcs": 6,
+        "amount": 15.0
+      },
+      {
+        "store": "謝斐 (MJF)",
+        "product_code": "P-004",
+        "product_name": "啡色紅豆砵仔糕",
+        "unit": "盤",
+        "allocated_pans": 0.0,
+        "no_of_pcs": 0,
         "remaining_pcs": null,
         "sold_pcs": 3,
-        "amount": null
+        "amount": 22.0
       },
       {
         "store": "謝斐 (MJF)",
         "product_code": "P-048",
         "product_name": "楊枝金露(大)",
         "unit": "杯",
-        "allocated_pans": 0.0,
-        "no_of_pcs": 0,
+        "allocated_pans": 12.0,
+        "no_of_pcs": 12,
         "remaining_pcs": null,
         "sold_pcs": 1,
         "amount": null
@@ -21605,11 +21770,22 @@
         "product_code": "P-051",
         "product_name": "芒芒多重奏",
         "unit": "杯",
-        "allocated_pans": 0.0,
-        "no_of_pcs": 0,
+        "allocated_pans": 12.0,
+        "no_of_pcs": 12,
         "remaining_pcs": null,
         "sold_pcs": 1,
         "amount": null
+      },
+      {
+        "store": "謝斐 (MJF)",
+        "product_code": "P-058",
+        "product_name": "3.6牛奶燉蛋白(淨底)",
+        "unit": "件",
+        "allocated_pans": 12.0,
+        "no_of_pcs": 12,
+        "remaining_pcs": null,
+        "sold_pcs": 3,
+        "amount": 22.0
       }
     ]
   }
