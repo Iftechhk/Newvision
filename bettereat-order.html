@@ -1274,7 +1274,7 @@ function markLocalSynced(clientRef, lines, j){
         var ln = lines[k];
         for (var m = 0; m < _arr.length; m++) {
           var _r = _arr[m];
-          if (_r && !_r.feishuId && _r.clientRef === clientRef && _r.product === ln.product && _r.qty === ln.qty && normStatus(_r.status) === normStatus(ln.status)) { _r.feishuId = id; _r.order = orderNo; break; }
+          if (_r && !_r.feishuId && _r.clientRef === clientRef && _r.product === ln.product && _r.qty === ln.qty && normStatus(_r.status) === normStatus(ln.status)) { _r.feishuId = id; _r.order = orderNo; delete _r.pendingReceipt; break; }
         }
       }
     }
@@ -1294,6 +1294,23 @@ function updateSubmitStatusOrder(orderNo){
     var t = String(st.textContent || "");
     if (t.indexOf("訂單編號派緊…") >= 0) st.textContent = t.replace("訂單編號派緊…", orderNo ? ("訂單編號：" + orderNo) : "訂單編號未派出");
   } catch (e) {}
+}
+// 2026-11-28：因為庫存唔夠而同步唔到嘅行，標做「待收貨」——唔係失敗，係等收貨，唔會強行傳送去飛書。
+// 只標「已確認」行；同一單嘅「待PROCESS」行本身唔扣庫存，唔係佢哋卡住。
+function markRowsPendingReceipt(rows){
+  var arr = loadRecords();
+  var changed = false;
+  (rows || []).forEach(function(r){
+    if (!r || normStatus(r.status) !== "已確認") return;
+    for (var i = 0; i < arr.length; i++) {
+      var x = arr[i];
+      if (!x || x.feishuId) continue;
+      if (x.product !== r.product || x.qty !== r.qty) continue;
+      if (r.clientRef && x.clientRef === r.clientRef) { if (!x.pendingReceipt) { x.pendingReceipt = true; changed = true; } break; }
+    }
+  });
+  if (changed) saveRecords(arr);
+  return changed;
 }
 function syncSalesToFeishu(rows, statusEl, status, orderDiscount, extraLines){
   if ((!rows || !rows.length) && (!extraLines || !extraLines.length)) return;
@@ -1344,7 +1361,7 @@ function syncSalesToFeishu(rows, statusEl, status, orderDiscount, extraLines){
         updateSubmitStatusOrder(orderNoKnown);
         finish("已同步去飛書「銷售紀錄」（" + lines.length + " 行）。" + (syncStatus === "待確認" ? "（已暫存，未扣庫存）" : "") + (j.alreadyDone ? "（之前已經入咗，冇重複寫入）" : ""));
       }
-      else if (j && j.error === "stock_below_cap") finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置。");
+      else if (j && j.error === "stock_below_cap") { markRowsPendingReceipt(rows); finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置（標做「待收貨」，唔會傳送去飛書）。"); }
       else if (j && (j.error === "submit_in_progress" || j.error === "seq_in_progress")) scheduleRetry("（同步進行緊，30 秒後自動再試…）");
       else if (tries < 3) scheduleRetry("（同步失敗，30 秒後自動再試…）");
       else finish("未能同步去飛書（記錄已存喺呢部裝置），稍後可再提交。");

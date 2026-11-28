@@ -175,6 +175,7 @@
       <option value="已確認">已確認</option>
       <option value="已取消">已取消</option>
       <option value="待PROCESS">待PROCESS</option>
+      <option value="待收貨">待收貨</option>
     </select>
     <button class="xbtn" onclick="clearRecordsDate()">清除日期</button>
     <button class="xbtn" id="exportBtn" onclick="exportRecords()">匯出 Excel</button>
@@ -182,7 +183,7 @@
   </div>
   <div style="overflow-x:auto;">
     <table class="rectable" id="recordsTable">
-      <thead><tr><th>訂單編號</th><th>記錄日期</th><th>記錄時間</th><th>取貨門店</th><th>狀態</th><th class="prodcol">產品</th><th>數量</th><th>單價</th><th>總金額</th><th>改價原因</th><th>備註</th><th></th></tr></thead>
+      <thead><tr><th>訂單編號</th><th>記錄日期</th><th>記錄時間</th><th>取貨門店</th><th>狀態</th><th class="prodcol">產品</th><th>數量</th><th>待扣數</th><th>單價</th><th>總金額</th><th>改價原因</th><th>備註</th><th></th></tr></thead>
       <tbody id="recordsBody"></tbody>
     </table>
   </div>
@@ -190,7 +191,7 @@
     <button class="xbtn" id="resyncBtn" onclick="resyncUnsynced()" disabled>重新同步全部未同步</button>
     <button class="xbtn" id="clearUnsyncedBtn" onclick="clearUnsyncedRecords()" disabled>清除未同步記錄</button>
     <button class="xbtn" id="clearRecordsBtn" onclick="clearRecords()">清空全部記錄</button>
-    <div style="font-size:13px;color:#71879a;line-height:1.7;">記錄而家係由飛書「銷售紀錄」表讀返嚟，任何一部機登入都睇到晒所有店嘅單，唔再淨係得呢部機先睇到。記錄係喺訂購頁確認提交嗰陣生成，一個產品一行，同一次提交嘅各行會共用同一個訂單編號，同時即刻傳送去飛書「銷售紀錄」表。喺呢頁可以撳「編輯」改單價、數量同原因，或者撳「刪除」刪走一行；改動會即刻同步去飛書「銷售紀錄」，如果同步失敗，記錄仍然會存喺呢部裝置，下次再改同一行會再試同步。上面可以揀睇邊間店嘅記錄，一間店嘅記錄獨立顯示。入頁嗰陣未同步嘅行會自動同步去飛書，唔使逐行撳；如果自動同步失敗，可以撳「重新同步全部未同步」再試。未同步嘅行唔會顯示喺下面個表，入咗飛書先至出現。如果有行係多出嚟、唔應該入飛書，撳「清除未同步記錄」清走佢哋，佢哋唔會再傳送去飛書。登入嗰陣揀邊間店，記錄就睇邊間店；管理員登入可以睇晒全部店。「清空」只會清呢部裝置嘅本地記錄，唔會刪除飛書嘅數據。</div>
+    <div style="font-size:13px;color:#71879a;line-height:1.7;">記錄而家係由飛書「銷售紀錄」表讀返嚟，任何一部機登入都睇到晒所有店嘅單，唔再淨係得呢部機先睇到。記錄係喺訂購頁確認提交嗰陣生成，一個產品一行，同一次提交嘅各行會共用同一個訂單編號，同時即刻傳送去飛書「銷售紀錄」表。喺呢頁可以撳「編輯」改單價、數量同原因，或者撳「刪除」刪走一行；改動會即刻同步去飛書「銷售紀錄」，如果同步失敗，記錄仍然會存喺呢部裝置，下次再改同一行會再試同步。上面可以揀睇邊間店嘅記錄，一間店嘅記錄獨立顯示。入頁嗰陣未同步嘅行會自動同步去飛書，唔使逐行撳；如果自動同步失敗，可以撳「重新同步全部未同步」再試。未同步嘅行唔會顯示喺下面個表（因為庫存唔夠而待收貨嘅行除外，會顯示做「待收貨」，唔會傳送去飛書），入咗飛書先至出現。如果有行係多出嚟、唔應該入飛書，撳「清除未同步記錄」清走佢哋，佢哋唔會再傳送去飛書。登入嗰陣揀邊間店，記錄就睇邊間店；管理員登入可以睇晒全部店。「清空」只會清呢部裝置嘅本地記錄，唔會刪除飛書嘅數據。</div>
   </div>
   <div class="foot">數據來源：BETTEREAT 飛書系統 · 餐牌以飛書產品主檔為準</div>
 </div>
@@ -224,6 +225,24 @@ function statusBadge(r){
   var s = rowStatus(r);
   var cls = s === "待確認" ? "st-pending" : (s === "已取消" ? "st-cancelled" : "st-confirmed");
   return '<span class="statusbadge ' + cls + '">' + esc(s) + '</span>';
+}
+// 2026-11-28：待收貨行嘅顯示狀態——狀態欄顯示「待收貨」。
+// 標記只係顯示用（pendingReceipt 旗），唔會寫入飛書；入咗飛書嗰陣標記清走。
+function displayStatus(r){ return (r && r.pendingReceipt) ? "待收貨" : rowStatus(r); }
+// 2026-11-28：待扣數——呢行有幾多件未扣庫存（唔夠數嗰部分）。
+// 待收貨行（cap-blocked，未入飛書）：成行都未扣，待扣數 = 數量。
+// 飛書「待PROCESS」行：本身就係唔夠數嗰部分，待扣數 = 數量。
+// 其他行（已確認／已取消／待確認）：冇待扣數，留空。
+function pendingDeductQty(r){
+  if (!r) return "";
+  var q = (r.qty !== undefined && r.qty !== null && r.qty !== "") ? r.qty : "";
+  if (r.pendingReceipt) return q;
+  if (rowStatus(r) === "待PROCESS") return q;
+  return "";
+}
+function displayRemarks(r){
+  if (!r || !r.pendingReceipt) return r ? (r.remarks || "") : "";
+  return r.remarks ? (r.remarks + "（待收貨）") : "待收貨";
 }
 var lastShownPairs = [];
 // ===== 跨裝置同步狀態：記錄頁以飛書「銷售紀錄」表為準 =====
@@ -371,6 +390,7 @@ function syncLocalStatusFromFeishu(){
     }
     if (match) {
       if (!lr.feishuId && match.feishuId) { lr.feishuId = match.feishuId; changed = true; }
+      if (lr.pendingReceipt) { delete lr.pendingReceipt; changed = true; } // 入咗飛書，「待收貨」標記清走
       var s = rowStatus(match);
       if (rowStatus(lr) !== s) { lr.status = s; changed = true; }
     }
@@ -441,14 +461,16 @@ function renderRecords(){
   var pairs = buildDisplayPairs();
   if (shop) pairs = pairs.filter(function(p){ return p.r.store === shop; });
   if (recordsDateFilter) pairs = pairs.filter(function(p){ return splitRecordTime(p.r.time).date === recordsDateFilter; });
-  if (recordsStatusFilter) pairs = pairs.filter(function(p){ return rowStatus(p.r) === recordsStatusFilter; });
+  if (recordsStatusFilter) pairs = pairs.filter(function(p){ return displayStatus(p.r) === recordsStatusFilter; });
   if (editingIndex >= pairs.length) { editingIndex = -1; editDraft = null; }
   lastShownPairs = pairs;
   var unsyncedCount = pairs.filter(function(p){ return p.unsynced; }).length;
   // 2026-11-28：未同步行唔顯示喺表——未入飛書，顯示出嚟會撈亂（冇單號、狀態唔係真）。
   // 佢哋仲喺 outbox：入頁自動同步／「重新同步全部未同步」照樣處理，入咗飛書先至出現。
+  // 例外：因為庫存唔夠而標做「待收貨」嘅行會顯示（狀態＋備註都話明待收貨，唔會傳送去飛書），
+  // 等大家知嗰單係等收貨，唔係唔見咗。
   // lastShownPairs 照舊包埋佢哋，di 先至唔會錯位，自動同步先至搵到佢哋。
-  var shownPairs = pairs.filter(function(p){ return !p.unsynced; });
+  var shownPairs = pairs.filter(function(p){ return !p.unsynced || (p.r && p.r.pendingReceipt); });
   var cnt = document.getElementById("recordsCount");
   if (cnt) cnt.textContent = (shop ? shop : "全部店舖") + (recordsDateFilter ? "｜" + recordsDateFilter : "") + (recordsStatusFilter ? "｜" + recordsStatusFilter : "") + "：共 " + shownPairs.length + " 行";
   var exBtn = document.getElementById("exportBtn");
@@ -464,32 +486,36 @@ function renderRecords(){
     if (shop && recordsDateFilter) emptyMsg = "呢間店呢個日期暫時未有記錄";
     else if (shop) emptyMsg = "呢間店暫時未有記錄";
     else if (recordsDateFilter) emptyMsg = "呢個日期暫時未有記錄";
-    html = '<tr><td colspan="12" style="color:#71879a;text-align:center;">' + emptyMsg + '</td></tr>';
+    html = '<tr><td colspan="13" style="color:#71879a;text-align:center;">' + emptyMsg + '</td></tr>';
   } else {
     pairs.forEach(function(p, di){
-      if (p.unsynced) return; // 唔顯示；di 照舊係 lastShownPairs 嘅位置，編輯／刪除唔會錯位
+      if (p.unsynced && !(p.r && p.r.pendingReceipt)) return; // 唔顯示（待收貨行除外）；di 照舊係 lastShownPairs 嘅位置，編輯／刪除唔會錯位
       var r = p.r;
       var prod = (r.product !== undefined) ? esc(r.product) : esc(r.items || "");
       var qty = (r.qty !== undefined) ? esc(r.qty) : "—";
       var rt = splitRecordTime(r.time);
       var orderCell = esc(r.order || "—");
-      var actions = '<button class="del" onclick="editRecord(' + di + ')">編輯</button> <button class="del" onclick="deleteRecord(' + di + ')">刪除</button>' +
-        (p.unsynced ? ' <button class="del" onclick="resyncOneRecord(' + di + ')">重新同步</button>' : "");
+      // 待收貨行：唔係飛書記錄，冇編輯／刪除掣（要清走用下面「清除未同步記錄」）；狀態＋備註話明待收貨。
+      var statusCell = (p.r && p.r.pendingReceipt) ? '<span class="statusbadge st-pending">待收貨</span>' : (statusBadge(r) + (p.unsynced ? ' <span class="statusbadge st-unsynced">未同步</span>' : ""));
+      var actions = (p.r && p.r.pendingReceipt) ? "" : ('<button class="del" onclick="editRecord(' + di + ')">編輯</button> <button class="del" onclick="deleteRecord(' + di + ')">刪除</button>' +
+        (p.unsynced ? ' <button class="del" onclick="resyncOneRecord(' + di + ')">重新同步</button>' : ""));
+      var pendQty = pendingDeductQty(r);
+      var pendCell = '<td>' + (pendQty === "" ? "—" : esc(pendQty)) + '</td>';
       if (di === editingIndex && editDraft) {
-        html += '<tr><td style="white-space:nowrap;">' + orderCell + '</td><td style="white-space:nowrap;">' + esc(rt.date) + '</td><td style="white-space:nowrap;">' + esc(rt.time) + '</td><td>' + esc(r.store) + '</td><td>' + statusBadge(r) + (p.unsynced ? ' <span class="statusbadge st-unsynced">未同步</span>' : "") + '</td><td class="prodcol">' + prod + '</td>' +
-          '<td><input class="eqty" type="number" step="1" min="1" value="' + esc(editDraft.qty) + '" oninput="editDraft.qty=this.value;recomputeEditSub()"></td>' +
+        html += '<tr><td style="white-space:nowrap;">' + orderCell + '</td><td style="white-space:nowrap;">' + esc(rt.date) + '</td><td style="white-space:nowrap;">' + esc(rt.time) + '</td><td>' + esc(r.store) + '</td><td>' + statusCell + '</td><td class="prodcol">' + prod + '</td>' +
+          '<td><input class="eqty" type="number" step="1" min="1" value="' + esc(editDraft.qty) + '" oninput="editDraft.qty=this.value;recomputeEditSub()"></td>' + pendCell +
           '<td><input class="eprice" type="number" step="any" min="0" value="' + esc(editDraft.price) + '" oninput="editDraft.price=this.value;recomputeEditSub()"></td>' +
           '<td id="edsub">' + (r.subtotal != null ? fmtMoney(r.subtotal) : "—") + '</td>' +
           '<td><select class="ereason" onchange="editDraft.reason=this.value;toggleEditDetail()">' + reasonOptions(editDraft.reason) + '</select>' +
           '<input class="ereasonDetail" id="eddetail" type="text" placeholder="其他原因說明（可空）" style="display:' + (editDraft.reason === '其他' ? 'block' : 'none') + ';margin-top:4px;" value="' + esc(editDraft.reasonDetail || '') + '" oninput="editDraft.reasonDetail=this.value"></td>' +
-          '<td>' + esc(r.remarks) + '</td>' +
+          '<td>' + esc(displayRemarks(r)) + '</td>' +
           '<td style="white-space:nowrap;"><button class="del" onclick="saveEditedRecord(' + di + ')">儲存</button> <button class="del" onclick="cancelEdit()">取消</button></td></tr>';
       } else {
-        html += '<tr><td style="white-space:nowrap;">' + orderCell + '</td><td style="white-space:nowrap;">' + esc(rt.date) + '</td><td style="white-space:nowrap;">' + esc(rt.time) + '</td><td>' + esc(r.store) + '</td><td>' + statusBadge(r) + (p.unsynced ? ' <span class="statusbadge st-unsynced">未同步</span>' : "") + '</td><td class="prodcol">' + prod + '</td><td>' + qty + '</td>' +
+        html += '<tr><td style="white-space:nowrap;">' + orderCell + '</td><td style="white-space:nowrap;">' + esc(rt.date) + '</td><td style="white-space:nowrap;">' + esc(rt.time) + '</td><td>' + esc(r.store) + '</td><td>' + statusCell + '</td><td class="prodcol">' + prod + '</td><td>' + qty + '</td>' + pendCell +
           '<td>' + (r.price != null ? fmtMoney(r.price) : "—") + '</td>' +
           '<td>' + (r.subtotal != null ? fmtMoney(r.subtotal) : "—") + '</td>' +
           '<td>' + (r.reason ? esc(r.reason) : "—") + '</td>' +
-          '<td>' + esc(r.remarks) + '</td>' +
+          '<td>' + esc(displayRemarks(r)) + '</td>' +
           '<td style="white-space:nowrap;">' + actions + '</td></tr>';
       }
     });
@@ -610,14 +636,15 @@ function exportRecords(){
       "取貨門店": r.store || "",
       "產品": (r.product !== undefined) ? r.product : (r.items || ""),
       "數量": (r.qty !== undefined && r.qty !== null && r.qty !== "") ? Number(r.qty) : "",
+      "待扣數": (function(){ var q = pendingDeductQty(r); return q === "" ? "" : Number(q); })(),
       "單價": (r.price != null && r.price !== "") ? Number(r.price) : "",
       "總金額": (r.subtotal != null && r.subtotal !== "") ? Number(r.subtotal) : "",
       "改價原因": r.reason || "",
-      "備註": r.remarks || ""
+      "備註": displayRemarks(r)
     };
   });
   var ws = XLSX.utils.json_to_sheet(rows);
-  ws["!cols"] = [{wch:16},{wch:12},{wch:10},{wch:12},{wch:30},{wch:8},{wch:10},{wch:10},{wch:12},{wch:20}];
+  ws["!cols"] = [{wch:16},{wch:12},{wch:10},{wch:12},{wch:30},{wch:8},{wch:8},{wch:10},{wch:10},{wch:12},{wch:20}];
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "訂單記錄");
   var d = new Date();
@@ -799,6 +826,7 @@ function applyOrderRecordIds(group, lineRows, recordIds, orderNo){
           (r.order === "" && !lr.order && r.time === lr.time);
         if (same) {
           r.feishuId = id;
+          delete r.pendingReceipt; // 入咗飛書，「待收貨」標記清走
           if (orderNo) r.order = orderNo;
           changed = true;
           break;
@@ -825,6 +853,29 @@ function groupRowsStillInOutbox(group){
     }
     return false;
   });
+}
+
+// 2026-11-28：因為庫存唔夠而同步唔到嘅行，標做「待收貨」——唔係失敗，係等收貨。
+// 標記（pendingReceipt）存喺本地行；顯示嗰陣狀態＋備註都會話明「待收貨」，唔會強行傳送去飛書。
+// 只標「已確認」行：同一單入面嘅「待PROCESS」行本身唔扣庫存，唔係佢哋卡住。
+// 入咗飛書之後標記自動清走（applyOrderRecordIds／syncLocalStatusFromFeishu 嗰陣）。
+function markPairsPendingReceipt(pairs){
+  var arr = loadRecords();
+  var changed = false;
+  (pairs || []).forEach(function(p){
+    var r = p.r;
+    if (!r || normStatus(r.status) !== "已確認") return;
+    for (var i = 0; i < arr.length; i++) {
+      var x = arr[i];
+      if (!x || x.feishuId) continue;
+      if (x.product !== r.product || x.qty !== r.qty) continue;
+      var same = (r.clientRef && x.clientRef === r.clientRef) ||
+        (!r.clientRef && x.time === r.time && x.store === r.store);
+      if (same) { if (!x.pendingReceipt) { x.pendingReceipt = true; changed = true; } break; }
+    }
+  });
+  if (changed) saveRecords(arr);
+  return changed;
 }
 
 // 將一組未同步行補返去飛書。返 Promise<boolean>：
@@ -862,6 +913,8 @@ function syncOutboxGroup(group){
         return true;
       }
       // stock_below_cap 係業務拒絕：唔重試，留返喺度等人收貨／改單。
+      // 2026-11-28：因為庫存唔夠而過唔到嘅行，標做「待收貨」——唔會強行傳送去飛書。
+      if (j && j.error === "stock_below_cap") markPairsPendingReceipt(group.pairs);
       return false;
     }).catch(function(){
       if (timer) clearTimeout(timer);
@@ -930,7 +983,10 @@ function maybeAutoSyncUnsynced(){
         st.textContent = "已自動同步 " + okCount + " 行去飛書，重新載入緊記錄…";
         st.className = "status ok";
       } else {
-        st.textContent = "已自動同步 " + okCount + "／" + pairs.length + " 行，其餘 " + (pairs.length - okCount) + " 行仍然留喺呢部裝置";
+        // 2026-11-28：因為庫存唔夠而標做「待收貨」嘅行，話明佢哋唔會傳送去飛書，等收貨先過到。
+        var shop = getRecordsShop();
+        var pendCount = loadRecords().filter(function(r){ return r && r.pendingReceipt && !r.feishuId && (!shop || r.store === shop); }).length;
+        st.textContent = "已自動同步 " + okCount + "／" + pairs.length + " 行，其餘 " + (pairs.length - okCount) + " 行仍然留喺呢部裝置" + (pendCount ? "（其中 " + pendCount + " 行因為庫存唔夠標做「待收貨」，唔會傳送去飛書，等門店確認收貨先過到）" : "");
         st.className = "status err";
       }
     }
@@ -978,10 +1034,16 @@ function resyncUnsynced(){
   if (st) { st.textContent = "重新同步緊 " + pairs.length + " 行未同步記錄去飛書…"; st.className = "status"; }
   syncUnsyncedSequentially(pairs, function(okCount){
     if (st) {
-      st.textContent = okCount === pairs.length
-        ? "已重新同步全部 " + okCount + " 行去飛書，重新載入緊記錄…"
-        : "已重新同步 " + okCount + "／" + pairs.length + " 行，其餘仍然留喺呢部裝置，稍後可以再試。";
-      st.className = okCount === pairs.length ? "status ok" : "status err";
+      if (okCount === pairs.length) {
+        st.textContent = "已重新同步全部 " + okCount + " 行去飛書，重新載入緊記錄…";
+        st.className = "status ok";
+      } else {
+        // 2026-11-28：因為庫存唔夠而標做「待收貨」嘅行，話明佢哋唔會傳送去飛書，等收貨先過到。
+        var shop = getRecordsShop();
+        var pendCount = loadRecords().filter(function(r){ return r && r.pendingReceipt && !r.feishuId && (!shop || r.store === shop); }).length;
+        st.textContent = "已重新同步 " + okCount + "／" + pairs.length + " 行，其餘仍然留喺呢部裝置，稍後可以再試。" + (pendCount ? "（其中 " + pendCount + " 行因為庫存唔夠標做「待收貨」，唔會傳送去飛書，等門店確認收貨先過到）" : "");
+        st.className = "status err";
+      }
     }
     loadFeishuRecords();
   });
