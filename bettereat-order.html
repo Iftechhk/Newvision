@@ -1245,8 +1245,10 @@ function recordToLine(r){
 // in_progress 就等；never_seen 先交。未派號（唔知單號）嗰陣，重交本身就係查——
 // Worker 憑 clientRef 搵返同一個號，再憑 KV 冪等 key 決定寫唔寫。
 // stock_below_cap 係業務拒絕，唔重試；其餘失敗 30 秒後再試，最多 3 次。
-// SUBMIT_TIMEOUT_MS／SUBMIT_RETRY_MS 係常數，方便 harness 覆寫做快測（生產值 45 秒／30 秒）。
-var SUBMIT_TIMEOUT_MS = 45000;
+// SUBMIT_TIMEOUT_MS／SUBMIT_RETRY_MS 係常數，方便 harness 覆寫做快測（生產值 120 秒／30 秒）。
+// 2026-11-28：45 秒唔夠——飛書而家慢，成次提交（list＋C 表＋寫入）實測 47 秒，
+// 45 秒會喺 Worker 寫完之前 cut 線，變假失敗，行就永遠留喺 outbox 過唔到。
+var SUBMIT_TIMEOUT_MS = 120000;
 var SUBMIT_RETRY_MS = 30000;
 // GET /order/{orderNo}：查一張單嘅提交狀態（DESIGN.md §2.5）。
 // 回 {ok, order, status: "done"|"in_progress"|"never_seen", recordIds?, ...}；
