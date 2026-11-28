@@ -230,11 +230,15 @@ function statusBadge(r){
 // 標記只係顯示用（pendingReceipt 旗），唔會寫入飛書；入咗飛書嗰陣標記清走。
 function displayStatus(r){ return (r && r.pendingReceipt) ? "待收貨" : rowStatus(r); }
 // 2026-11-28：待扣數——呢行有幾多件未扣庫存（唔夠數嗰部分）。
+// 飛書真欄位優先：Worker 寫返嚟嘅數最準（扣咗幾多、清咗幾多都係嗰個數）。
+// 未入飛書嘅本地行（待收貨）／舊行（寫入嗰陣未有呢個欄）：按狀態計返後備值。
 // 待收貨行（cap-blocked，未入飛書）：成行都未扣，待扣數 = 數量。
 // 飛書「待PROCESS」行：本身就係唔夠數嗰部分，待扣數 = 數量。
 // 其他行（已確認／已取消／待確認）：冇待扣數，留空。
 function pendingDeductQty(r){
   if (!r) return "";
+  // 飛書真欄位：有數就用佢（> 0 先係有待扣數；0 即係已扣晒／留空）。
+  if (typeof r.pendingQty === "number" && isFinite(r.pendingQty) && r.pendingQty > 0) return r.pendingQty;
   var q = (r.qty !== undefined && r.qty !== null && r.qty !== "") ? r.qty : "";
   if (r.pendingReceipt) return q;
   if (rowStatus(r) === "待PROCESS") return q;
@@ -280,6 +284,8 @@ function feishuRowToLocal(rec){
     reason: rec.reason || "", remarks: rec.remarks || "",
     // 狀態由飛書「狀態」欄帶過嚟；舊行／Worker 未回狀態就預設「已確認」。
     status: normStatus(rec.status != null ? rec.status : rec["狀態"]),
+    // 待扣數由飛書真欄位帶過嚟（2026-11-28）；舊行冇呢個欄就 0，顯示嗰陣按狀態計返後備值。
+    pendingQty: (typeof rec.pendingQty === "number") ? rec.pendingQty : (parseInt(rec.pendingQty, 10) || 0),
     feishuId: rec.record_id || rec.feishuId || ""
   };
 }
@@ -724,7 +730,10 @@ function recordToLine(r){
     giftProduct: r.giftProduct || "",
     giftProductCode: r.giftCode || "",
     // 狀態照跟返行本身（編輯一待確認行唔會靜靜哋變已確認）；冇就預設「已確認」。
-    status: normStatus(r.status)
+    status: normStatus(r.status),
+    // 待扣數（2026-11-28）：Worker 寫入飛書「待扣數」欄用。待PROCESS 行 = 數量（成行未扣），
+    // 其他行 = 0（今次提交會扣晒）。本地待收貨行都係 0——佢哋今次交得入就係扣晒先至入到。
+    pendingQty: (normStatus(r.status) === "待PROCESS") ? q : 0
   };
 }
 // 編輯記錄之後（改價／改數量／改原因），將改好嗰行即刻 POST 去 Worker 更新飛書「銷售紀錄」嗰行。

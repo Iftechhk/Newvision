@@ -1225,6 +1225,9 @@ function recordToLine(r){
     remarks: r.remarks || "",
     // 狀態：冇就預設「已確認」（向後兼容舊記錄）；「待確認」即係暫存，唔扣庫存。
     status: normStatus(r.status),
+    // 待扣數（2026-11-28）：Worker 寫入飛書「待扣數」欄用。待PROCESS 行 = 數量（成行未扣），
+    // 其他行 = 0（今次提交會扣晒）。
+    pendingQty: (normStatus(r.status) === "待PROCESS") ? q : 0,
     // 優惠：freeQty 係送嘅件數（$0 行），unitPrice 係折後單價（同 price 一致），
     // promoRule/promoType 係邊條規則生效；冇優惠嗰陣 freeQty 0、promoRule/promoType 空字串。
     // 2026-11-18 最平免費：贈品一定係本行產品（giftProduct／giftCode = 本行產品），
