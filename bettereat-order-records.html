@@ -188,8 +188,9 @@
   </div>
   <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center;">
     <button class="xbtn" id="resyncBtn" onclick="resyncUnsynced()" disabled>重新同步全部未同步</button>
+    <button class="xbtn" id="clearUnsyncedBtn" onclick="clearUnsyncedRecords()" disabled>清除未同步記錄</button>
     <button class="xbtn" id="clearRecordsBtn" onclick="clearRecords()">清空全部記錄</button>
-    <div style="font-size:13px;color:#71879a;line-height:1.7;">記錄而家係由飛書「銷售紀錄」表讀返嚟，任何一部機登入都睇到晒所有店嘅單，唔再淨係得呢部機先睇到。記錄係喺訂購頁確認提交嗰陣生成，一個產品一行，同一次提交嘅各行會共用同一個訂單編號，同時即刻傳送去飛書「銷售紀錄」表。喺呢頁可以撳「編輯」改單價、數量同原因，或者撳「刪除」刪走一行；改動會即刻同步去飛書「銷售紀錄」，如果同步失敗，記錄仍然會存喺呢部裝置，下次再改同一行會再試同步。上面可以揀睇邊間店嘅記錄，一間店嘅記錄獨立顯示。入頁嗰陣未同步嘅行會自動同步去飛書，唔使逐行撳；如果自動同步失敗，可以撳「重新同步全部未同步」再試。未同步嘅行唔會顯示喺下面個表，入咗飛書先至出現。登入嗰陣揀邊間店，記錄就睇邊間店；管理員登入可以睇晒全部店。「清空」只會清呢部裝置嘅本地記錄，唔會刪除飛書嘅數據。</div>
+    <div style="font-size:13px;color:#71879a;line-height:1.7;">記錄而家係由飛書「銷售紀錄」表讀返嚟，任何一部機登入都睇到晒所有店嘅單，唔再淨係得呢部機先睇到。記錄係喺訂購頁確認提交嗰陣生成，一個產品一行，同一次提交嘅各行會共用同一個訂單編號，同時即刻傳送去飛書「銷售紀錄」表。喺呢頁可以撳「編輯」改單價、數量同原因，或者撳「刪除」刪走一行；改動會即刻同步去飛書「銷售紀錄」，如果同步失敗，記錄仍然會存喺呢部裝置，下次再改同一行會再試同步。上面可以揀睇邊間店嘅記錄，一間店嘅記錄獨立顯示。入頁嗰陣未同步嘅行會自動同步去飛書，唔使逐行撳；如果自動同步失敗，可以撳「重新同步全部未同步」再試。未同步嘅行唔會顯示喺下面個表，入咗飛書先至出現。如果有行係多出嚟、唔應該入飛書，撳「清除未同步記錄」清走佢哋，佢哋唔會再傳送去飛書。登入嗰陣揀邊間店，記錄就睇邊間店；管理員登入可以睇晒全部店。「清空」只會清呢部裝置嘅本地記錄，唔會刪除飛書嘅數據。</div>
   </div>
   <div class="foot">數據來源：BETTEREAT 飛書系統 · 餐牌以飛書產品主檔為準</div>
 </div>
@@ -454,6 +455,8 @@ function renderRecords(){
   if (exBtn) exBtn.disabled = !shownPairs.length;
   var rsBtn = document.getElementById("resyncBtn");
   if (rsBtn) rsBtn.disabled = !unsyncedCount;
+  var cuBtn = document.getElementById("clearUnsyncedBtn");
+  if (cuBtn) cuBtn.disabled = !unsyncedCount;
   updateFeishuSyncStatus();
   var html = "";
   if (!shownPairs.length) {
@@ -806,9 +809,30 @@ function applyOrderRecordIds(group, lineRows, recordIds, orderNo){
   if (changed) saveRecords(arr);
 }
 
+// 呢組未同步行係咪仲喺 outbox（未畀人清走）。清走咗就唔好再交：
+// 有 clientRef 就按 clientRef＋產品＋數量認；舊行冇 clientRef 就按時間＋產品＋門店＋數量認。
+// 有 feishuId 嘅行已經入咗飛書，唔計。
+function groupRowsStillInOutbox(group){
+  var arr = loadRecords();
+  return (group.pairs || []).every(function(p){
+    var r = p.r;
+    for (var i = 0; i < arr.length; i++) {
+      var x = arr[i];
+      if (!x || x.feishuId) continue;
+      if (x.product !== r.product || x.qty !== r.qty) continue;
+      if (r.clientRef && x.clientRef === r.clientRef) return true;
+      if (!r.clientRef && x.time === r.time && x.store === r.store) return true;
+    }
+    return false;
+  });
+}
+
 // 將一組未同步行補返去飛書。返 Promise<boolean>：
 // true = 呢組已經入咗（或已經唔使再交），false = 仲未入（留返喺 outbox，下次再試）。
 function syncOutboxGroup(group){
+  // 2026-11-28：清走咗嘅未同步行唔可以再交——提交前先確認呢組啲行仲喺 outbox。
+  // （清走嗰陣如果有提交已經喺半路，嗰次可能會照樣寫入，之後要用「刪除」刪返；未開始交嗰啲呢度一定擋得住。）
+  if (!groupRowsStillInOutbox(group)) return Promise.resolve(true);
   var lineRows = [];
   var lines = [];
   group.pairs.forEach(function(p){
@@ -1094,6 +1118,40 @@ function deleteRecord(di){
     editingIndex = -1; editDraft = null;
     renderRecords();
   });
+}
+// 2026-11-28：清走未同步記錄——有啲行係多出嚟／唔應該入飛書（例如重複落單），
+// 唔可以等佢自動同步，亦唔應該顯示。只清呢部裝置 outbox 入面而家睇到嘅未同步行
+// （跟上面嘅門店／日期篩選），飛書已有嘅記錄完全唔郁。清走之後自動同步唔會再交佢哋
+// （syncOutboxGroup 提交前會再確認行仲喺唔喺 outbox）。
+function clearUnsyncedRecords(){
+  var pairs = (lastShownPairs || []).filter(function(p){ return p.unsynced; });
+  if (!pairs.length) return;
+  var shop = getRecordsShop();
+  var n = pairs.length;
+  if (!confirm("確定清除" + (shop ? "「" + shop + "」" : "") + " " + n + " 行未同步記錄？佢哋唔會再傳送去飛書，飛書已有嘅記錄唔受影響。")) return;
+  var idx = {};
+  pairs.forEach(function(p){ if (p.localIndex !== null && p.localIndex !== undefined) idx[p.localIndex] = true; });
+  var arr = loadRecords();
+  var kept = [];
+  for (var i = 0; i < arr.length; i++) {
+    if (idx[i]) continue; // 呢個位置就係要清走嘅未同步行
+    kept.push(arr[i]);
+  }
+  // localIndex 係舊行先有（新行一定有；舊行冇 localIndex 就按內容配對補清）
+  pairs.forEach(function(p){
+    if (p.localIndex !== null && p.localIndex !== undefined) return;
+    var r = p.r;
+    for (var j = 0; j < kept.length; j++) {
+      var x = kept[j];
+      if (!x || x.feishuId) continue;
+      if (x.product === r.product && x.qty === r.qty && x.time === r.time && x.store === r.store) { kept.splice(j, 1); break; }
+    }
+  });
+  saveRecords(kept);
+  editingIndex = -1; editDraft = null;
+  renderRecords();
+  var st = document.getElementById("recordsStatus");
+  if (st) { st.textContent = "已清除 " + n + " 行未同步記錄（唔會再傳送去飛書）。"; st.className = "status"; }
 }
 function clearRecords(){
   var shop = getRecordsShop();
