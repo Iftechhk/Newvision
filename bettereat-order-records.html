@@ -887,6 +887,33 @@ function markPairsPendingReceipt(pairs){
   return changed;
 }
 
+// 2026-11-28：cap 拒絕嗰陣改以「待PROCESS」入飛書——將本地行轉做待PROCESS（清走待收貨標記，
+// 備註改做待PROCESS 標準字句），等 applyOrderRecordIds 掛 feishuId 嗰陣狀態對得上。
+function markPairsAsProcess(pairs){
+  var arr = loadRecords();
+  var changed = false;
+  (pairs || []).forEach(function(p){
+    var r = p.r;
+    if (!r || normStatus(r.status) !== "已確認") return;
+    for (var i = 0; i < arr.length; i++) {
+      var x = arr[i];
+      if (!x || x.feishuId) continue;
+      if (x.product !== r.product || x.qty !== r.qty) continue;
+      var same = (r.clientRef && x.clientRef === r.clientRef) ||
+        (!r.clientRef && x.time === r.time && x.store === r.store);
+      if (same) {
+        x.status = "待PROCESS";
+        if (!/待PROCESS/.test(String(x.remarks || ""))) x.remarks = "待PROCESS：未收貨，待 admin check";
+        if (x.pendingReceipt) delete x.pendingReceipt;
+        changed = true;
+        break;
+      }
+    }
+  });
+  if (changed) saveRecords(arr);
+  return changed;
+}
+
 // 將一組未同步行補返去飛書。返 Promise<boolean>：
 // true = 呢組已經入咗（或已經唔使再交），false = 仲未入（留返喺 outbox，下次再試）。
 function syncOutboxGroup(group){
@@ -921,13 +948,60 @@ function syncOutboxGroup(group){
         if (!j.alreadyDone || !j.linesHashMismatch) applyOrderRecordIds(group, lineRows, j.recordIds || [], orderNo);
         return true;
       }
-      // stock_below_cap 係業務拒絕：唔重試，留返喺度等人收貨／改單。
-      // 2026-11-28：因為庫存唔夠而過唔到嘅行，標做「待收貨」——唔會強行傳送去飛書。
-      if (j && j.error === "stock_below_cap") markPairsPendingReceipt(group.pairs);
+      // stock_below_cap：唔重試原樣，改以「待PROCESS」再交一次，等佢入飛書（待扣數＝數量），
+      // admin 喺飛書睇到先確認收貨再扣數。再交都唔得先退返標「待收貨」。
+      if (j && j.error === "stock_below_cap") return resubmitGroupAsProcess();
       return false;
     }).catch(function(){
       if (timer) clearTimeout(timer);
       // 網絡錯／逾時：response 可能已經入咗，下次先查再決定，唔好即刻再交。
+      return false;
+    });
+  }
+  // 2026-11-28：cap 拒絕嗰陣改以「待PROCESS」再交一次（同一個 clientRef，Worker 會用返
+  // 同一個單號；待PROCESS 行唔扣庫存、唔做 cap 檢查，所以一定入到飛書，待扣數＝數量）。
+  // 返 Promise<boolean>：true = 已入飛書做待PROCESS，false = 仲未入（退返標「待收貨」）。
+  function resubmitGroupAsProcess(){
+    var procRows = [];
+    var changed = false;
+    group.pairs.forEach(function(p){
+      var r = p.r;
+      if (!r) return;
+      if (normStatus(r.status) === "已確認") {
+        var c = {};
+        for (var k in r) if (Object.prototype.hasOwnProperty.call(r, k)) c[k] = r[k];
+        c.status = "待PROCESS";
+        if (!/待PROCESS/.test(String(c.remarks || ""))) c.remarks = "待PROCESS：未收貨，待 admin check";
+        procRows.push(c);
+        changed = true;
+      } else {
+        procRows.push(r);
+      }
+    });
+    if (!changed) { markPairsPendingReceipt(group.pairs); return Promise.resolve(false); }
+    var procLines = [];
+    procRows.forEach(function(r){ var ln = recordToLine(r); if (ln) procLines.push(ln); });
+    if (!procLines.length) { markPairsPendingReceipt(group.pairs); return Promise.resolve(false); }
+    var ctrl = null, timer = null;
+    try { ctrl = new AbortController(); timer = setTimeout(function(){ try { ctrl.abort(); } catch (e) {} }, SUBMIT_TIMEOUT_MS); } catch (e) { ctrl = null; }
+    var body = { action: "submit", lines: procLines, orderDiscount: null, clientRef: clientRef };
+    if (group.order) body.order = group.order;
+    var opts = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+    if (ctrl) opts.signal = ctrl.signal;
+    return fetch(V2_WORKER_URL, opts).then(function(res){ return res.json(); }).then(function(j){
+      if (timer) clearTimeout(timer);
+      if (j && j.ok) {
+        var orderNo = j.order || group.order || "";
+        if (orderNo) group.order = orderNo;
+        markPairsAsProcess(group.pairs);
+        if (!j.alreadyDone || !j.linesHashMismatch) applyOrderRecordIds(group, procRows, j.recordIds || [], orderNo);
+        return true;
+      }
+      markPairsPendingReceipt(group.pairs);
+      return false;
+    }).catch(function(){
+      if (timer) clearTimeout(timer);
+      markPairsPendingReceipt(group.pairs);
       return false;
     });
   }

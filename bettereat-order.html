@@ -1315,6 +1315,29 @@ function markRowsPendingReceipt(rows){
   if (changed) saveRecords(arr);
   return changed;
 }
+// 2026-11-28：cap 拒絕嗰陣改以「待PROCESS」入飛書——將本地行轉做待PROCESS（清走待收貨標記，
+// 備註改做待PROCESS 標準字句），等 markLocalSynced 掛 feishuId 嗰陣狀態對得上。
+function markRowsAsProcess(rows){
+  var arr = loadRecords();
+  var changed = false;
+  (rows || []).forEach(function(r){
+    if (!r || normStatus(r.status) !== "已確認") return;
+    for (var i = 0; i < arr.length; i++) {
+      var x = arr[i];
+      if (!x || x.feishuId) continue;
+      if (x.product !== r.product || x.qty !== r.qty) continue;
+      if (r.clientRef && x.clientRef === r.clientRef) {
+        x.status = "待PROCESS";
+        if (!/待PROCESS/.test(String(x.remarks || ""))) x.remarks = "待PROCESS：未收貨，待 admin check";
+        if (x.pendingReceipt) delete x.pendingReceipt;
+        changed = true;
+        break;
+      }
+    }
+  });
+  if (changed) saveRecords(arr);
+  return changed;
+}
 function syncSalesToFeishu(rows, statusEl, status, orderDiscount, extraLines){
   if ((!rows || !rows.length) && (!extraLines || !extraLines.length)) return;
   // 邊種提交由第三個參數定，冇傳就跟第一行嘅狀態（再冇就預設已確認）。
@@ -1341,6 +1364,67 @@ function syncSalesToFeishu(rows, statusEl, status, orderDiscount, extraLines){
     }
     if (!orderNoKnown) updateSubmitStatusOrder(null);
   }
+  // 2026-11-28：cap 拒絕唔再淨係留喺部機——將卡住嘅已確認行改以「待PROCESS」再交一次
+  // （同一個 clientRef，Worker 會用返同一個單號；待PROCESS 行唔扣庫存、唔做 cap 檢查，
+  // 所以一定入到飛書，待扣數＝數量，admin 喺飛書睇到先確認收貨再扣數）。
+  var procResubmitted = false;
+  function resubmitAsProcess(){
+    if (procResubmitted) { markRowsPendingReceipt(rows); finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置（標做「待收貨」，唔會傳送去飛書）。"); return; }
+    procResubmitted = true;
+    var procRows = [];
+    var changed = false;
+    (rows || []).forEach(function(r){
+      if (!r) return;
+      if (normStatus(r.status) === "已確認") {
+        var c = {};
+        for (var k in r) if (Object.prototype.hasOwnProperty.call(r, k)) c[k] = r[k];
+        c.status = "待PROCESS";
+        if (!/待PROCESS/.test(String(c.remarks || ""))) c.remarks = "待PROCESS：未收貨，待 admin check";
+        procRows.push(c);
+        changed = true;
+      } else {
+        procRows.push(r);
+      }
+    });
+    if (!changed) { markRowsPendingReceipt(rows); finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置（標做「待收貨」，唔會傳送去飛書）。"); return; }
+    var procLines = [];
+    procRows.forEach(function(r){ var ln = recordToLine(r); if (ln) procLines.push(ln); });
+    // extraLines（贈品／滿減）：已確認嗰啲都轉埋待PROCESS（贈品行會扣庫存，唔轉會再撞 cap）。
+    var procExtra = (extraLines || []).map(function(l){
+      if (!l) return l;
+      if (normStatus(l.status) === "已確認") {
+        var c2 = {};
+        for (var k2 in l) if (Object.prototype.hasOwnProperty.call(l, k2)) c2[k2] = l[k2];
+        c2.status = "待PROCESS";
+        return c2;
+      }
+      return l;
+    });
+    var allProc = procLines.concat(procExtra);
+    if (!allProc.length) { markRowsPendingReceipt(rows); finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置（標做「待收貨」，唔會傳送去飛書）。"); return; }
+    var body2 = { action: "submit", lines: allProc, orderDiscount: orderDiscount || null, clientRef: clientRef };
+    if (orderNoKnown) body2.order = orderNoKnown;
+    var ctrl2 = null, timer2 = null;
+    try { ctrl2 = new AbortController(); timer2 = setTimeout(function(){ try { ctrl2.abort(); } catch (e) {} }, SUBMIT_TIMEOUT_MS); } catch (e) { ctrl2 = null; }
+    var opts2 = { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body2) };
+    if (ctrl2) opts2.signal = ctrl2.signal;
+    fetch(V2_WORKER_URL, opts2).then(function(res){ return res.json(); }).then(function(j2){
+      if (timer2) clearTimeout(timer2);
+      if (j2 && j2.ok) {
+        markRowsAsProcess(rows);
+        orderNoKnown = markLocalSynced(clientRef, procLines, j2);
+        updateSubmitStatusOrder(orderNoKnown);
+        finish("已同步去飛書「銷售紀錄」做「待PROCESS」（" + allProc.length + " 行，待扣數已入飛書）。呢單因為庫存唔夠，等門店確認收貨後由 admin 確認扣數。");
+      } else {
+        markRowsPendingReceipt(rows);
+        finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置（標做「待收貨」，唔會傳送去飛書）。");
+      }
+    }).catch(function(){
+      if (timer2) clearTimeout(timer2);
+      markRowsPendingReceipt(rows);
+      finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置（標做「待收貨」，唔會傳送去飛書）。");
+    });
+  }
   // ⚠️ 2026-11-17 修正：舊版 recordToLine 只接受舊格式 B20261106-002，新格式 BMJF20261106-002
   // 全部被濾走，lines 係空就靜靜哋 return，飛書永遠收唔到新單。宜家格式唔啱會出提示，唔再無聲漏單。
   if (!lines.length) { finish("未能同步去飛書（記錄資料不完整），記錄已存喺呢部裝置，之後去訂單記錄頁撳「重新同步」。"); return; }
@@ -1364,7 +1448,7 @@ function syncSalesToFeishu(rows, statusEl, status, orderDiscount, extraLines){
         updateSubmitStatusOrder(orderNoKnown);
         finish("已同步去飛書「銷售紀錄」（" + lines.length + " 行）。" + (syncStatus === "待確認" ? "（已暫存，未扣庫存）" : "") + (j.alreadyDone ? "（之前已經入咗，冇重複寫入）" : ""));
       }
-      else if (j && j.error === "stock_below_cap") { markRowsPendingReceipt(rows); finish("未能同步去飛書：呢單會令庫存低過下限（未收貨最多負 5 件），請先確認收貨或者減少數量。記錄已存喺呢部裝置（標做「待收貨」，唔會傳送去飛書）。"); }
+      else if (j && j.error === "stock_below_cap") { resubmitAsProcess(); }
       else if (j && (j.error === "submit_in_progress" || j.error === "seq_in_progress")) scheduleRetry("（同步進行緊，30 秒後自動再試…）");
       else if (tries < 3) scheduleRetry("（同步失敗，30 秒後自動再試…）");
       else finish("未能同步去飛書（記錄已存喺呢部裝置），稍後可再提交。");
